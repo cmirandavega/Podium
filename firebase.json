@@ -1,0 +1,28 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "podium-e5862",
+          "appId": "1:714168259621:android:7ae732ed183e1b35f3dbcc",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "podium-e5862",
+          "configurations": {
+            "android": "1:714168259621:android:7ae732ed183e1b35f3dbcc",
+            "ios": "1:714168259621:ios:331f3c953b8e6523f3dbcc"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "database": "(default)",
+    "location": "nam5",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

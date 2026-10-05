@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "714168259621",
+    "project_id": "podium-e5862",
+    "storage_bucket": "podium-e5862.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:714168259621:android:7ae732ed183e1b35f3dbcc",
+        "android_client_info": {
+          "package_name": "edu.gsu.podium.podium"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD2XqURYbpOuHWuelXjLX9rm-UCJv0IDCQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
