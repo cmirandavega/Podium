@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../leaderboard/leaderboard_screen.dart';
 
 import '../../models/app_user.dart';
 import '../../services/auth_service.dart';
@@ -61,8 +62,30 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 4),
             Text('@${user.username}', style: const TextStyle(color: PodiumColors.muted)),
             const SizedBox(height: 32),
-            Text('My leagues', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 12),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.leaderboard_outlined),
+                label: const Text('View Leaderboard'),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const LeaderboardScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            const SizedBox(height: 32),
+
+            Text(
+              'My leagues',
+              style: text.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),const SizedBox(height: 12),
             // Placeholder: the league use case replaces this with the user's leagues.
             Container(
               padding: const EdgeInsets.all(20),
