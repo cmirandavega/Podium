@@ -1,8 +1,12 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function signedIn() { return request.auth != null; }
+    function signedIn() {
+      return request.auth != null;
+    }
+
     function isAdmin() {
       return signedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
@@ -31,7 +35,8 @@ service cloud.firestore {
 
     match /leagues/{leagueId} {
       allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.commissionerId == request.auth.uid;
+      allow create: if signedIn()
+                    && request.resource.data.commissionerId == request.auth.uid;
       allow update, delete: if signedIn()
         && (resource.data.commissionerId == request.auth.uid || isAdmin());
 
@@ -49,8 +54,15 @@ service cloud.firestore {
 
     match /teams/{teamId} {
       allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow update: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if signedIn()
+                    && request.resource.data.ownerId == request.auth.uid;
+      allow update: if signedIn()
+                    && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /leaderboard/{entryId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
     }
   }
 }
