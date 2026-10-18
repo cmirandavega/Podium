@@ -46,7 +46,7 @@ scoring rules costs nothing.
 | Collection | Document ID | Fields |
 |---|---|---|
 | `players` | `NFL_{apiPlayerId}` | sport, externalApiId, fullName, realTeam, position (inferred: QB, RB, or WR), updatedAt |
-| `playerStats` | `NFL_{apiPlayerId}_{gameId}` | playerId, sport, scoringPeriodId, gameId, gameDate, rawStats (map), fantasyPoints |
+| `playerStats` | `NFL_{apiPlayerId}_{gameId}` | playerId, sport, fullName, realTeam, position, scoringPeriodId, gameId, gameDate, rawStats (map), fantasyPoints |
 | `scoringPeriods` | `period_{season}_w{week}` | season, week, startDate, endDate, lockTime |
 
 Example query for a team builder screen: `players` where `sport == "NFL"`.

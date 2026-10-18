@@ -6,6 +6,7 @@ import '../../theme.dart';
 import '../../widgets/podium_mark.dart';
 import '../admin/admin_screen.dart';
 import '../profile/profile_screen.dart';
+import '../scores/scores_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.user});
@@ -35,6 +36,13 @@ class HomeScreen extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => AdminScreen(currentUser: user)),
               ),
             ),
+          IconButton(
+            tooltip: 'Live scoring',
+            icon: const Icon(Icons.sports_football_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ScoresScreen()),
+            ),
+          ),
           IconButton(
             tooltip: 'Profile',
             icon: const Icon(Icons.person_outline),
