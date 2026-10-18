@@ -70,6 +70,10 @@ async function writeWeek(period, rows) {
       data: {
         playerId,
         sport: r.sport,
+        // Copied from the player so score lists load without a second read per player.
+        fullName: r.fullName,
+        realTeam: r.realTeam,
+        position: r.position || null,
         scoringPeriodId: period.id,
         gameId: r.gameId,
         gameDate: Timestamp.fromDate(r.gameDate),
