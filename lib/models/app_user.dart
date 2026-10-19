@@ -22,8 +22,15 @@ class AppUser {
 
   bool get isAdmin => role == 'admin';
   bool get isSuspended => status == 'suspended';
-  String get nameToShow => displayName.isNotEmpty ? displayName : username;
+  bool get isWarned => status == 'warned';
 
+  String get accountStanding {
+    if (isSuspended) return 'Suspended';
+    if (isWarned) return 'Warning';
+    return 'Good Standing';
+  }
+
+  String get nameToShow => displayName.isNotEmpty ? displayName : username;
   factory AppUser.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? <String, dynamic>{};
     return AppUser(

@@ -1,0 +1,16 @@
+{
+  "name": "sports-ingest",
+  "version": "1.0.0",
+  "description": "Fetches sports statistics from API-Sports, scores them, and writes them to Cloud Firestore for Podium.",
+  "type": "commonjs",
+  "private": true,
+  "scripts": {
+    "probe": "node --env-file=.env probe.js",
+    "ingest": "node --env-file=.env ingest.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20.6" },
+  "dependencies": {
+    "firebase-admin": "^14.5.0"
+  }
+}

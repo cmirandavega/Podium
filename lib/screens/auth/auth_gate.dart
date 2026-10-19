@@ -7,6 +7,7 @@ import '../../services/user_service.dart';
 import '../../widgets/status_screens.dart';
 import '../home/home_screen.dart';
 import 'login_screen.dart';
+import '../reports/report_history_screen.dart';
 
 /// Session handling: decides which screen to show based on the
 /// Firebase Auth session and the user's Firestore profile.
@@ -72,16 +73,55 @@ class _ProfileGateState extends State<_ProfileGate> {
         final appUser = snapshot.data;
         if (appUser == null) {
           // Right after registration the profile document may not exist yet.
-          return LoadingScreen(message: 'Setting up your account', onSignOut: _signOut);
+          return LoadingScreen(
+            message: 'Setting up your account',
+            onSignOut: _signOut,
+          );
         }
-
         if (appUser.isSuspended) {
-          return StatusScreen(
-            title: 'This account is suspended.',
-            body: 'An administrator suspended this account. Contact your league '
-                'commissioner if you think this is a mistake.',
-            actionLabel: 'Back to log in',
-            onAction: _signOut,
+          return Scaffold(
+            appBar: AppBar(title: const Text('Account Suspended')),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.block, size: 56, color: Colors.red),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Account Standing: Suspended',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'An administrator suspended this account.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.history),
+                      label: const Text('View Moderation History'),
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ReportHistoryScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: _signOut,
+                      child: const Text('Log Out'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           );
         }
 

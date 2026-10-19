@@ -1,12 +1,19 @@
+
 import 'package:flutter/material.dart';
 import '../leaderboard/leaderboard_screen.dart';
 
 import '../../models/app_user.dart';
 import '../../services/auth_service.dart';
 import '../../theme.dart';
+import '../../widgets/notification_bell.dart';
 import '../../widgets/podium_mark.dart';
 import '../admin/admin_screen.dart';
 import '../profile/profile_screen.dart';
+import '../scores/scores_screen.dart';
+
+import '../../services/user_service.dart';
+import '../reports/report_user_screen.dart';
+import '/screens/mock_draft_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.user});
@@ -33,9 +40,18 @@ class HomeScreen extends StatelessWidget {
               tooltip: 'Admin tools',
               icon: const Icon(Icons.admin_panel_settings_outlined),
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => AdminScreen(currentUser: user)),
+                MaterialPageRoute(
+                  builder: (_) => AdminScreen(currentUser: user),
+                ),
               ),
             ),
+          IconButton(
+            tooltip: 'Live scoring',
+            icon: const Icon(Icons.sports_football_outlined),
+            onPressed: () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const ScoresScreen())),
+          ),
+          NotificationBell(uid: user.uid),
           IconButton(
             tooltip: 'Profile',
             icon: const Icon(Icons.person_outline),
@@ -60,7 +76,10 @@ class HomeScreen extends StatelessWidget {
               style: text.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 4),
-            Text('@${user.username}', style: const TextStyle(color: PodiumColors.muted)),
+            Text(
+              '@${user.username}',
+              style: const TextStyle(color: PodiumColors.muted),
+            ),
             const SizedBox(height: 32),
 
             SizedBox(
@@ -86,6 +105,92 @@ class HomeScreen extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),const SizedBox(height: 12),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.flag_outlined),
+              label: const Text('Report a User'),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => Scaffold(
+                      appBar: AppBar(
+                        title: const Text('Select User to Report'),
+                      ),
+                      body: StreamBuilder<List<AppUser>>(
+                        stream: UserService().watchAllUsers(),
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return const Center(
+                              child: Text('Unable to load users.'),
+                            );
+                          }
+
+                          if (!snapshot.hasData) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
+
+                          final users = snapshot.data!
+                              .where(
+                                (other) =>
+                                    other.uid != user.uid && !other.isAdmin,
+                              )
+                              .toList();
+
+                          if (users.isEmpty) {
+                            return const Center(
+                              child: Text('No users available to report.'),
+                            );
+                          }
+
+                          return ListView.builder(
+                            itemCount: users.length,
+                            itemBuilder: (context, index) {
+                              final other = users[index];
+
+                              return ListTile(
+                                leading: const Icon(Icons.person_outline),
+                                title: Text(other.nameToShow),
+                                subtitle: Text('@${other.username}'),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          ReportUserScreen(reportedUser: other),
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+
+            OutlinedButton.icon(
+              icon: const Icon(Icons.sports_esports_outlined),
+              label: const Text('Mock Draft Simulator'),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const MockDraftScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+
+            Text(
+              'My leagues',
+              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
             // Placeholder: the league use case replaces this with the user's leagues.
             Container(
               padding: const EdgeInsets.all(20),
@@ -97,8 +202,10 @@ class HomeScreen extends StatelessWidget {
               child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("You're not in any leagues yet.",
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  Text(
+                    "You're not in any leagues yet.",
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   SizedBox(height: 6),
                   Text(
                     'Create a league or join one with an invite to start building your roster.',

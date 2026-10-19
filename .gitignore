@@ -56,3 +56,8 @@ scripts/firestore-seed/node_modules/
 .agents/
 .claude/
 skills-lock.json
+
+# Sports ingestion secrets and cache
+scripts/sports-ingest/.env
+scripts/sports-ingest/node_modules/
+scripts/sports-ingest/cache/
