@@ -5,6 +5,8 @@ import '../../services/notification_service.dart';
 import '../../services/user_service.dart';
 import '../../theme.dart';
 
+import '../reports/admin_reports_screen.dart';
+
 /// Admin-only screen: suspend or reactivate accounts.
 /// The button to open it only appears for admins, and Firestore Security
 /// Rules reject status changes from anyone who is not an admin.
@@ -25,6 +27,7 @@ class _AdminScreenState extends State<AdminScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await _users.setStatus(user.uid, active ? 'active' : 'suspended');
+
       await NotificationService().send(
         userId: user.uid,
         type: 'account_status',
@@ -32,14 +35,23 @@ class _AdminScreenState extends State<AdminScreen> {
             ? 'Your account was reactivated by an admin. Welcome back.'
             : 'Your account was suspended by an admin.',
       );
-      messenger.showSnackBar(SnackBar(
-        content: Text(active
-            ? '@${user.username} reactivated.'
-            : '@${user.username} suspended.'),
-      ));
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            active
+                ? '@${user.username} reactivated.'
+                : '@${user.username} suspended.',
+          ),
+        ),
+      );
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Status not changed. Check your connection and try again.')),
+        const SnackBar(
+          content: Text(
+            'Status not changed. Check your connection and try again.',
+          ),
+        ),
       );
     }
   }
@@ -47,12 +59,27 @@ class _AdminScreenState extends State<AdminScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Admin tools')),
+      appBar: AppBar(
+        title: const Text('Admin tools'),
+        actions: [
+          IconButton(
+            tooltip: 'Review user reports',
+            icon: const Icon(Icons.flag_outlined),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AdminReportsScreen()),
+              );
+            },
+          ),
+        ],
+      ),
       body: StreamBuilder<List<AppUser>>(
         stream: _allUsers,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return const Center(child: Text('Users did not load. Check your connection.'));
+            return const Center(
+              child: Text('Users did not load. Check your connection.'),
+            );
           }
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -61,7 +88,8 @@ class _AdminScreenState extends State<AdminScreen> {
           return ListView.separated(
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: users.length + 1,
-            separatorBuilder: (_, _) => const Divider(height: 1, color: PodiumColors.line),
+            separatorBuilder: (_, _) =>
+                const Divider(height: 1, color: PodiumColors.line),
             itemBuilder: (context, index) {
               if (index == 0) {
                 return Padding(
@@ -86,7 +114,9 @@ class _AdminScreenState extends State<AdminScreen> {
                 onChanged: isSelf ? null : (active) => _setActive(user, active),
                 secondary: Icon(
                   user.isSuspended ? Icons.block : Icons.check_circle_outline,
-                  color: user.isSuspended ? PodiumColors.danger : PodiumColors.gold,
+                  color: user.isSuspended
+                      ? PodiumColors.danger
+                      : PodiumColors.gold,
                 ),
               );
             },

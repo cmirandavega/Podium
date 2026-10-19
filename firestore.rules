@@ -1,3 +1,4 @@
+
 rules_version = '2';
 
 service cloud.firestore {
@@ -78,6 +79,89 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // User reporting and admin review
+    match /reports/{reportId} {
+
+      // Only admins can read submitted reports.
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.reporterId == request.auth.uid);
+
+      // Signed-in users can submit reports about other players.
+      allow create: if signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['active', 'warned']
+        && request.resource.data.keys().hasOnly([
+          'reporterId',
+          'reportedUserId',
+          'reason',
+          'details',
+          'status',
+          'createdAt',
+          'reviewedAt',
+          'reviewedBy'
+        ])
+        && request.resource.data.keys().hasAll([
+          'reporterId',
+          'reportedUserId',
+          'reason',
+          'details',
+          'status',
+          'createdAt',
+          'reviewedAt',
+          'reviewedBy'
+        ])
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.reportedUserId is string
+        && request.resource.data.reportedUserId != request.auth.uid
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.reportedUserId))
+        && get(/databases/$(database)/documents/users/$(request.resource.data.reportedUserId)).data.role == 'user'
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.reason.size() <= 100
+        && request.resource.data.details is string
+        && request.resource.data.details.size() <= 1000
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.reviewedAt == null
+        && request.resource.data.reviewedBy == null;
+
+      // Only admins can review pending reports.
+      allow update: if isAdmin()
+        && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly([
+            'status',
+            'reviewedAt',
+            'reviewedBy'
+          ])
+        && request.resource.data.status in [
+          'dismissed',
+          'warned',
+          'suspended'
+        ]
+        && request.resource.data.reviewedBy == request.auth.uid
+        && request.resource.data.reviewedAt == request.time;
+
+      allow delete: if false;
+    }
+
+    match /moderationNotices/{noticeId} {
+      allow read: if signedIn()
+        && (resource.data.userId == request.auth.uid || isAdmin());
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'userId', 'reason', 'status', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'userId', 'reason', 'status', 'createdAt'
+        ])
+        && request.resource.data.userId is string
+        && request.resource.data.reason is string
+        && request.resource.data.status in ['warned', 'suspended']
+        && request.resource.data.createdAt == request.time;
+
+      allow update, delete: if false;
+    }
     // Use Case 6: users see only their own notifications and can only mark them read.
     // Admins can send notifications to any user (for example, account status changes).
     match /notifications/{notificationId} {

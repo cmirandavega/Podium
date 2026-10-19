@@ -6,6 +6,7 @@ import '../../services/notification_service.dart';
 import '../../services/user_service.dart';
 import '../../theme.dart';
 import '../../utils/validators.dart';
+import '../reports/report_history_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key, required this.user});
@@ -18,7 +19,11 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
-  late final _displayName = TextEditingController(text: widget.user.displayName);
+
+  late final _displayName = TextEditingController(
+    text: widget.user.displayName,
+  );
+
   bool _saving = false;
 
   @override
@@ -29,8 +34,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _saving = true);
+
     try {
       final name = _displayName.text.trim();
       await UserService().updateDisplayName(widget.user.uid, name);
@@ -39,30 +46,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
         type: 'profile_updated',
         message: 'Your profile name was changed to $name.',
       );
+
       messenger.showSnackBar(const SnackBar(content: Text('Profile saved.')));
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Profile not saved. Check your connection and try again.')),
+        const SnackBar(
+          content: Text(
+            'Profile not saved. Check your connection and try again.',
+          ),
+        ),
       );
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _saving = false);
+      }
     }
   }
 
   Future<void> _logOut() async {
     final auth = AuthService();
+
     Navigator.of(context).popUntil((route) => route.isFirst);
+
     await auth.signOut();
   }
 
   String _formatDate(DateTime? date) {
     if (date == null) return 'Just now';
+
     return '${date.month}/${date.day}/${date.year}';
   }
 
   @override
   Widget build(BuildContext context) {
     final user = widget.user;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
       body: SafeArea(
@@ -78,7 +96,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 validator: Validators.displayName,
               ),
             ),
+
             const SizedBox(height: 16),
+
             FilledButton(
               onPressed: _saving ? null : _save,
               child: _saving
@@ -89,12 +109,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     )
                   : const Text('Save changes'),
             ),
+
             const SizedBox(height: 32),
+
             _InfoRow(label: 'Username', value: '@${user.username}'),
+
             _InfoRow(label: 'Email', value: user.email),
-            _InfoRow(label: 'Account type', value: user.isAdmin ? 'Admin' : 'Player'),
+
+            _InfoRow(
+              label: 'Account type',
+              value: user.isAdmin ? 'Admin' : 'Player',
+            ),
+
+            _InfoRow(label: 'Account standing', value: user.accountStanding),
+
             _InfoRow(label: 'Member since', value: _formatDate(user.createdAt)),
+
             const SizedBox(height: 32),
+
+            OutlinedButton.icon(
+              icon: const Icon(Icons.history),
+              label: const Text('View Report History'),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ReportHistoryScreen(),
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 16),
+
             OutlinedButton.icon(
               onPressed: _logOut,
               icon: const Icon(Icons.logout),
@@ -122,7 +168,12 @@ class _InfoRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Expanded(child: Text(label, style: const TextStyle(color: PodiumColors.muted))),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: PodiumColors.muted),
+            ),
+          ),
           Flexible(child: Text(value, textAlign: TextAlign.right)),
         ],
       ),
