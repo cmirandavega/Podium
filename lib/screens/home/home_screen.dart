@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 
 import '../../models/app_user.dart';
@@ -11,6 +12,7 @@ import '../scores/scores_screen.dart';
 
 import '../../services/user_service.dart';
 import '../reports/report_user_screen.dart';
+import '/screens/mock_draft_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.user});
@@ -141,6 +143,19 @@ class HomeScreen extends StatelessWidget {
                         },
                       ),
                     ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+
+            OutlinedButton.icon(
+              icon: const Icon(Icons.sports_esports_outlined),
+              label: const Text('Mock Draft Simulator'),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const MockDraftScreen(),
                   ),
                 );
               },
