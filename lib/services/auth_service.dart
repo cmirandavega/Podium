@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'notification_service.dart';
+
 /// Error with a message that is safe to show to the user.
 class AuthException implements Exception {
   AuthException(this.message);
@@ -76,6 +78,15 @@ class AuthService {
           'status': 'active',
           'createdAt': FieldValue.serverTimestamp(),
         });
+        // Use Case 6: every new account starts with a welcome notification.
+        tx.set(
+          _db.collection('notifications').doc(),
+          NotificationService.newNotificationData(
+            userId: uid,
+            type: 'welcome',
+            message: 'Welcome to Podium! Create or join a league to start building your roster.',
+          ),
+        );
       });
     } catch (_) {
       await _deleteQuietly(cred.user);

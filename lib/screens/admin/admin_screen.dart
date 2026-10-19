@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/app_user.dart';
+import '../../services/notification_service.dart';
 import '../../services/user_service.dart';
 import '../../theme.dart';
 
@@ -24,6 +25,13 @@ class _AdminScreenState extends State<AdminScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await _users.setStatus(user.uid, active ? 'active' : 'suspended');
+      await NotificationService().send(
+        userId: user.uid,
+        type: 'account_status',
+        message: active
+            ? 'Your account was reactivated by an admin. Welcome back.'
+            : 'Your account was suspended by an admin.',
+      );
       messenger.showSnackBar(SnackBar(
         content: Text(active
             ? '@${user.username} reactivated.'
