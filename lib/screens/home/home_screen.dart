@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/app_user.dart';
 import '../../services/auth_service.dart';
 import '../../theme.dart';
+import '../../widgets/notification_bell.dart';
 import '../../widgets/podium_mark.dart';
 import '../admin/admin_screen.dart';
 import '../profile/profile_screen.dart';
@@ -47,6 +48,7 @@ class HomeScreen extends StatelessWidget {
             onPressed: () => Navigator.of(context)
                 .push(MaterialPageRoute(builder: (_) => const ScoresScreen())),
           ),
+          NotificationBell(uid: user.uid),
           IconButton(
             tooltip: 'Profile',
             icon: const Icon(Icons.person_outline),

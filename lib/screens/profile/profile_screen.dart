@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/app_user.dart';
 import '../../services/auth_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/user_service.dart';
 import '../../theme.dart';
 import '../../utils/validators.dart';
@@ -38,7 +39,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _saving = true);
 
     try {
-      await UserService().updateDisplayName(widget.user.uid, _displayName.text);
+      final name = _displayName.text.trim();
+      await UserService().updateDisplayName(widget.user.uid, name);
+      await NotificationService().send(
+        userId: widget.user.uid,
+        type: 'profile_updated',
+        message: 'Your profile name was changed to $name.',
+      );
 
       messenger.showSnackBar(const SnackBar(content: Text('Profile saved.')));
     } catch (_) {
