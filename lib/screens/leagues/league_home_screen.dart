@@ -12,6 +12,7 @@ import '../matchups/matchups_screen.dart';
 import '../matchups/standings_screen.dart';
 import '../matchups/weekly_analysis_screen.dart';
 import '../team/league_teams_screen.dart';
+import '../trades/trades_screen.dart';
 import '../team/team_screen.dart';
 import 'edit_sports_screen.dart';
 
@@ -79,6 +80,12 @@ class _LeagueHomeScreenState extends State<LeagueHomeScreen> {
             leagueId: league.id,
             teamId: Team.idFor(league.id, widget.user.uid),
           ),
+        ),
+        _LeagueTool(
+          icon: Icons.swap_horiz,
+          title: 'Trades',
+          subtitle: 'Offers, counters, and the AI Trade Analyzer',
+          builder: (_) => TradesScreen(leagueId: league.id, userId: widget.user.uid),
         ),
         _LeagueTool(
           icon: Icons.forum_outlined,

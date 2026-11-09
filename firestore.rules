@@ -137,6 +137,49 @@ service cloud.firestore {
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['wins', 'losses', 'ties', 'pointsFor'])));
     }
 
+    // Use Case 8. Members propose trades from their own team. The receiver
+    // can accept (completed), reject, or counter; the proposer can cancel.
+    match /trades/{tradeId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+                    && request.resource.data.proposerId == request.auth.uid
+                    && request.resource.data.proposerTeamId == request.resource.data.leagueId + '_' + request.auth.uid
+                    && request.resource.data.receiverTeamId == request.resource.data.leagueId + '_' + request.resource.data.receiverId
+                    && request.resource.data.receiverId != request.auth.uid
+                    && request.resource.data.status == 'pending'
+                    && isMemberOf(request.resource.data.leagueId);
+      allow update: if signedIn()
+                    && resource.data.status == 'pending'
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+                    && ((resource.data.receiverId == request.auth.uid
+                         && request.resource.data.status in ['completed', 'rejected', 'countered'])
+                        || (resource.data.proposerId == request.auth.uid
+                            && request.resource.data.status == 'cancelled'));
+
+      // Each item must be a player currently on one of the two teams.
+      match /items/{playerId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+                      && getAfter(/databases/$(database)/documents/trades/$(tradeId)).data.proposerId == request.auth.uid
+                      && getAfter(/databases/$(database)/documents/trades/$(tradeId)).data.status == 'pending'
+                      && request.resource.data.playerId == playerId
+                      && request.resource.data.fromTeamId in [
+                           getAfter(/databases/$(database)/documents/trades/$(tradeId)).data.proposerTeamId,
+                           getAfter(/databases/$(database)/documents/trades/$(tradeId)).data.receiverTeamId]
+                      && get(/databases/$(database)/documents/rosterSlots/$(getAfter(/databases/$(database)/documents/trades/$(tradeId)).data.leagueId + '_' + playerId)).data.teamId == request.resource.data.fromTeamId;
+      }
+    }
+
+    // Use Case 4. Saved analyses are private to the user who ran them.
+    match /tradeAnalyses/{analysisId} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.analysisType in ['trade', 'roster']
+                    && request.resource.data.explanation is string
+                    && request.resource.data.explanation.size() <= 4000;
+    }
+
     // Use Cases 5 and 15. Only the commissioner writes schedules, results,
     // and weekly reports; everyone signed in can read them.
     match /matchups/{matchupId} {
@@ -169,10 +212,29 @@ service cloud.firestore {
                     && request.resource.data.teamId == ownTeamId(request.resource.data.leagueId)
                     && slotLeague(request.resource.data.leagueId).lineupLocked == false
                     && request.resource.data.sport in slotLeague(request.resource.data.leagueId).sports;
+      // Accepting a trade (Use Case 8) moves each traded player to the other
+      // team's bench. Allowed only for players listed in that trade, while
+      // the trade goes from pending to completed in the same write.
+      function tradeMove() {
+        let tradePath = /databases/$(database)/documents/trades/$(request.resource.data.lastTradeId);
+        let before = get(tradePath).data;
+        let after = getAfter(tradePath).data;
+        let item = get(/databases/$(database)/documents/trades/$(request.resource.data.lastTradeId)/items/$(resource.data.playerId)).data;
+        return before.status == 'pending'
+          && after.status == 'completed'
+          && after.receiverId == request.auth.uid
+          && after.leagueId == resource.data.leagueId
+          && item.fromTeamId == resource.data.teamId
+          && request.resource.data.teamId == (item.fromTeamId == after.proposerTeamId ? after.receiverTeamId : after.proposerTeamId)
+          && request.resource.data.isStarter == false;
+      }
+
       allow update: if signedIn()
-                    && resource.data.teamId == ownTeamId(resource.data.leagueId)
                     && slotLeague(resource.data.leagueId).lineupLocked == false
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isStarter']);
+                    && ((resource.data.teamId == ownTeamId(resource.data.leagueId)
+                         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isStarter']))
+                        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamId', 'isStarter', 'lastTradeId', 'acquiredAt'])
+                            && tradeMove()));
       allow delete: if signedIn()
                     && resource.data.teamId == ownTeamId(resource.data.leagueId)
                     && slotLeague(resource.data.leagueId).lineupLocked == false;
@@ -284,8 +346,17 @@ service cloud.firestore {
     match /notifications/{notificationId} {
       allow read: if signedIn() && resource.data.userId == request.auth.uid;
       allow create: if signedIn()
-                    && (request.resource.data.userId == request.auth.uid || isAdmin())
-                    && request.resource.data.isRead == false;
+                    && request.resource.data.isRead == false
+                    && (request.resource.data.userId == request.auth.uid
+                        || isAdmin()
+                        || (request.resource.data.type in ['trade_offer', 'trade_update'] && tradeNotice()));
+
+      // Trade notices go only to the other team in that trade (Use Cases 6 and 8).
+      function tradeNotice() {
+        let trade = getAfter(/databases/$(database)/documents/trades/$(request.resource.data.relatedId)).data;
+        return (trade.proposerId == request.auth.uid && request.resource.data.userId == trade.receiverId)
+          || (trade.receiverId == request.auth.uid && request.resource.data.userId == trade.proposerId);
+      }
       allow update: if signedIn()
                     && resource.data.userId == request.auth.uid
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
