@@ -22,20 +22,18 @@ class AiService {
 
   final AiUsageService _usage;
 
-  /// Check the Firebase console (AI Logic) for models available to the project.
-  static const modelName = 'gemini-3.8-flash';
+  /// Flash-Lite answers fast and is reliable on the free tier; the larger
+  /// gemini-3.8-flash timed out and returned 500s there. Check the Firebase
+  /// console (AI Logic) for the models available to the project.
+  static const modelName = 'gemini-3.5-flash-lite';
   static const timeout = Duration(seconds: 60);
 
-  /// Newer Flash models think before answering by default, which can take
-  /// longer than the timeout. Lineup and trade advice doesn't need deep
-  /// reasoning, so both features use a low thinking level.
-  static final _thinking = ThinkingConfig.withThinkingLevel(ThinkingLevel.low);
 
   GenerativeModel _model(String systemInstruction, [GenerationConfig? config]) {
     return FirebaseAI.googleAI().generativeModel(
       model: modelName,
       systemInstruction: Content.system(systemInstruction),
-      generationConfig: config ?? GenerationConfig(thinkingConfig: _thinking),
+      generationConfig: config,
     );
   }
 
@@ -91,7 +89,6 @@ class AiService {
       GenerationConfig(
         responseMimeType: 'application/json',
         responseSchema: schema,
-        thinkingConfig: _thinking,
       ),
     );
 
