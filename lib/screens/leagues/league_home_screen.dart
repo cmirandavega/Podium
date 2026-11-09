@@ -8,6 +8,9 @@ import '../../services/league_service.dart';
 import '../../theme.dart';
 import '../chat/league_chat_screen.dart';
 import '../coach/coach_screen.dart';
+import '../matchups/matchups_screen.dart';
+import '../matchups/standings_screen.dart';
+import '../matchups/weekly_analysis_screen.dart';
 import '../team/league_teams_screen.dart';
 import '../team/team_screen.dart';
 import 'edit_sports_screen.dart';
@@ -53,6 +56,29 @@ class _LeagueHomeScreenState extends State<LeagueHomeScreen> {
           title: 'Teams',
           subtitle: 'See every roster in the league',
           builder: (_) => LeagueTeamsScreen(league: league, viewerId: widget.user.uid),
+        ),
+        _LeagueTool(
+          icon: Icons.sports_score_outlined,
+          title: 'Matchups',
+          subtitle: league.phase == 'preseason'
+              ? 'Schedule starts when the season does'
+              : 'Week ${league.currentWeek} head-to-head games',
+          builder: (_) => MatchupsScreen(leagueId: league.id, userId: widget.user.uid),
+        ),
+        _LeagueTool(
+          icon: Icons.format_list_numbered,
+          title: 'Standings',
+          subtitle: 'Ranked by record, then total points',
+          builder: (_) => StandingsScreen(league: league, userId: widget.user.uid),
+        ),
+        _LeagueTool(
+          icon: Icons.insights_outlined,
+          title: 'Weekly Analysis',
+          subtitle: 'Your recap after each scored week',
+          builder: (_) => WeeklyAnalysisScreen(
+            leagueId: league.id,
+            teamId: Team.idFor(league.id, widget.user.uid),
+          ),
         ),
         _LeagueTool(
           icon: Icons.forum_outlined,

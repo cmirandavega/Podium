@@ -128,9 +128,27 @@ service cloud.firestore {
                     && request.resource.data.ownerId == request.auth.uid
                     && teamId == request.resource.data.leagueId + '_' + request.auth.uid
                     && request.auth.uid in getAfter(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.memberIds;
-      allow update: if signedIn()
-                    && resource.data.ownerId == request.auth.uid
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamName']);
+      // Owners rename; the commissioner updates the record when scoring
+      // a week (Use Case 15).
+      allow update: if signedIn() && (
+          (resource.data.ownerId == request.auth.uid
+           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamName']))
+          || (isCommissionerOf(resource.data.leagueId)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['wins', 'losses', 'ties', 'pointsFor'])));
+    }
+
+    // Use Cases 5 and 15. Only the commissioner writes schedules, results,
+    // and weekly reports; everyone signed in can read them.
+    match /matchups/{matchupId} {
+      allow read: if signedIn();
+      allow create, update: if isCommissionerOf(request.resource.data.leagueId)
+                            && matchupId.matches('^' + request.resource.data.leagueId + '_w[0-9]+_[0-9]+$');
+    }
+
+    match /weeklyReports/{reportId} {
+      allow read: if signedIn();
+      allow create, update: if isCommissionerOf(request.resource.data.leagueId)
+                            && reportId == request.resource.data.teamId + '_' + request.resource.data.scoringPeriodId;
     }
 
     // Use Case 3. The doc ID {leagueId}_{playerId} means a player is on at

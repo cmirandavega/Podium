@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Fields from the Sprint 3 database table: name, commissionerId, format,
 /// sports, season, maxTeams, rosterSize, tradeReviewHours, status, createdAt.
 /// Added in Sprint 4: inviteCode, memberIds, starterCount, currentWeek,
-/// regularSeasonWeeks, playoffTeams, lineupLocked, phase.
+/// regularSeasonWeeks, playoffTeams, lineupLocked, phase, championTeamId.
 class League {
   const League({
     required this.id,
@@ -26,6 +26,7 @@ class League {
     required this.playoffTeams,
     required this.lineupLocked,
     required this.phase,
+    this.championTeamId,
     this.createdAt,
   });
 
@@ -47,6 +48,7 @@ class League {
   final int playoffTeams; // 0, 2, or 4
   final bool lineupLocked;
   final String phase; // "preseason", "regular", "playoffs", "complete"
+  final String? championTeamId;
   final DateTime? createdAt;
 
   static const formats = ['single-sport', 'multi-sport'];
@@ -83,6 +85,7 @@ class League {
       playoffTeams: (data['playoffTeams'] as num?)?.toInt() ?? 0,
       lineupLocked: data['lineupLocked'] as bool? ?? false,
       phase: data['phase'] as String? ?? 'preseason',
+      championTeamId: data['championTeamId'] as String?,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
     );
   }
