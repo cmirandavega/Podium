@@ -259,6 +259,25 @@ class _CoachScreenState extends State<CoachScreen> {
                                       ],
                                     ),
                             ),
+                            // After each Coach reply, offer the suggested questions again.
+                            if (messages.isNotEmpty && !messages.last.isUser && !_thinking && roster.isNotEmpty)
+                              SizedBox(
+                                height: 48,
+                                child: ListView(
+                                  scrollDirection: Axis.horizontal,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  children: [
+                                    for (final s in _suggestions)
+                                      Padding(
+                                        padding: const EdgeInsets.only(right: 8),
+                                        child: ActionChip(
+                                          label: Text(s),
+                                          onPressed: () => _ask(league, s),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
                             if (_thinking) const LinearProgressIndicator(),
                             if (_error != null || (unanswered && !_thinking))
                               Padding(
