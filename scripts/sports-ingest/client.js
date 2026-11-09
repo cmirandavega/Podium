@@ -5,10 +5,10 @@ const path = require('path');
 
 const BASE_URLS = {
   nfl: 'https://v1.american-football.api-sports.io',
+  soccer: 'https://v3.football.api-sports.io',
   // Added as adapters are written:
   // nba: 'https://v2.nba.api-sports.io',
   // mlb: 'https://v1.baseball.api-sports.io',
-  // soccer: 'https://v3.football.api-sports.io',
 };
 
 const MIN_GAP_MS = 6500;     // free plan allows 10 requests per minute

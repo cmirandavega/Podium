@@ -41,16 +41,25 @@ async function writeWeek(period, rows) {
   const { Timestamp, FieldValue } = admin;
   const writes = [];
 
-  writes.push({
-    ref: (d) => d.collection('scoringPeriods').doc(period.id),
-    data: {
-      season: String(period.season),
-      week: period.week,
-      startDate: Timestamp.fromDate(period.startDate),
-      endDate: Timestamp.fromDate(period.endDate),
-      lockTime: Timestamp.fromDate(period.lockTime),
-    },
-  });
+  if (period.keepExistingDates) {
+    // Non-NFL sports: create the week if it's missing, but keep the NFL's dates.
+    writes.push({
+      ref: (d) => d.collection('scoringPeriods').doc(period.id),
+      data: { season: String(period.season), week: period.week },
+      merge: true,
+    });
+  } else {
+    writes.push({
+      ref: (d) => d.collection('scoringPeriods').doc(period.id),
+      data: {
+        season: String(period.season),
+        week: period.week,
+        startDate: Timestamp.fromDate(period.startDate),
+        endDate: Timestamp.fromDate(period.endDate),
+        lockTime: Timestamp.fromDate(period.lockTime),
+      },
+    });
+  }
 
   for (const r of rows) {
     const playerId = `${r.sport}_${r.externalApiId}`;

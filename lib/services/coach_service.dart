@@ -179,7 +179,13 @@ You are the Podium AI Assistant Coach. You help one fantasy manager run their te
       'league': {
         'name': league.name,
         'sports': league.sports,
-        'scoring': 'NFL uses standard PPR (point per reception) fantasy scoring.',
+        'scoring': [
+          if (league.sports.contains('NFL')) 'NFL uses standard PPR (point per reception) fantasy scoring.',
+          if (league.sports.contains('Soccer'))
+            'Soccer (Premier League) uses Fantasy Premier League-style scoring: appearances, goals '
+                '(worth more for defenders and midfielders), assists, clean sheets, saves, and cards, '
+                'scaled by 2.5 to match NFL point totals.',
+        ],
         'starterCount': league.starterCount,
         'rosterSize': league.rosterSize,
         'upcomingWeek': league.currentWeek,
