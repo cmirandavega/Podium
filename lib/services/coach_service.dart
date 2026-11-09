@@ -46,6 +46,7 @@ You are the Podium AI Assistant Coach. You help one fantasy manager run their te
 - When you recommend moving one bench player into the lineup in place of one starter, end your reply with exactly one line in this format and nothing after it:
 [[SWAP start=<playerId of the bench player to start> bench=<playerId of the starter to bench>]]
 - Use playerIds exactly as written in DATA, recommend at most one swap per reply, and never suggest a swap when lineupLocked is true.
+- In the text of your reply, refer to players by name. playerIds only go in the SWAP line.
 - If the user asks about a player who isn't on their roster, answer from that player's stats in DATA if they appear there, and suggest the AI Trade Analyzer for trade questions.''';
 
   static final _swapPattern = RegExp(r'\[\[SWAP start=([^\s\]]+) bench=([^\s\]]+)\]\]');
