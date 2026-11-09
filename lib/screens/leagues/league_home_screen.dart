@@ -6,6 +6,7 @@ import '../../models/league.dart';
 import '../../models/team.dart';
 import '../../services/league_service.dart';
 import '../../theme.dart';
+import '../chat/league_chat_screen.dart';
 import '../team/league_teams_screen.dart';
 import '../team/team_screen.dart';
 import 'edit_sports_screen.dart';
@@ -44,6 +45,12 @@ class _LeagueHomeScreenState extends State<LeagueHomeScreen> {
           title: 'Teams',
           subtitle: 'See every roster in the league',
           builder: (_) => LeagueTeamsScreen(league: league, viewerId: widget.user.uid),
+        ),
+        _LeagueTool(
+          icon: Icons.forum_outlined,
+          title: 'League Chat',
+          subtitle: 'Talk trades and trash with your league',
+          builder: (_) => LeagueChatScreen(league: league, user: widget.user),
         ),
       ];
 

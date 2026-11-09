@@ -74,7 +74,39 @@ service cloud.firestore {
                       && request.resource.data.isMuted == false
                       && request.resource.data.coins == 1000
                       && uid in getAfter(/databases/$(database)/documents/leagues/$(leagueId)).data.memberIds;
-        allow update: if isAdmin();
+        // Admins can change anything; the commissioner can mute or unmute
+        // (Use Case 7).
+        allow update: if isAdmin()
+                      || (resource.data.userId != request.auth.uid
+                          && get(/databases/$(database)/documents/leagues/$(leagueId)).data.commissionerId == request.auth.uid
+                          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isMuted']));
+      }
+
+      // Use Case 7. Members who aren't muted can post as themselves.
+      // Senders, the commissioner, and admins can soft-delete a message.
+      match /messages/{messageId} {
+        function league() {
+          return get(/databases/$(database)/documents/leagues/$(leagueId)).data;
+        }
+
+        allow read: if signedIn() && (request.auth.uid in league().memberIds || isAdmin());
+        allow create: if signedIn()
+                      && request.auth.uid in league().memberIds
+                      && get(/databases/$(database)/documents/leagues/$(leagueId)/members/$(request.auth.uid)).data.isMuted == false
+                      && request.resource.data.keys().hasOnly(['senderId', 'senderName', 'body', 'isDeleted', 'createdAt'])
+                      && request.resource.data.senderId == request.auth.uid
+                      && request.resource.data.body is string
+                      && request.resource.data.body.size() > 0
+                      && request.resource.data.body.size() <= 500
+                      && request.resource.data.isDeleted == false
+                      && request.resource.data.createdAt == request.time;
+        allow update: if signedIn()
+                      && (resource.data.senderId == request.auth.uid
+                          || league().commissionerId == request.auth.uid
+                          || isAdmin())
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isDeleted', 'body'])
+                      && request.resource.data.isDeleted == true
+                      && request.resource.data.body == '';
       }
     }
 
