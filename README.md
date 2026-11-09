@@ -42,6 +42,23 @@ Start the emulator before `flutter run`. If more than one device is connected, l
 
 No Firebase setup is needed to run the app; the project configuration is already included.
 
+### AI features (one-time project setup)
+
+The AI Trade Analyzer and AI Assistant Coach call Gemini through
+[Firebase AI Logic](https://firebase.google.com/docs/ai-logic/get-started) using the
+Gemini Developer API, which works on the free Spark plan. The Gemini API key is created
+and stored in the Firebase project; never add it to the app code.
+
+1. In the Firebase console, open **AI Services → AI Logic** and click **Get started**
+2. Choose **Gemini Developer API**
+3. Deploy the security rules so the daily AI limits are enforced: `firebase deploy --only firestore:rules`
+
+Shared AI code lives in `lib/services/ai/`:
+
+- `ai_service.dart`: the only place that calls Gemini (chat turns and structured JSON, with timeout and one retry for JSON)
+- `ai_usage_service.dart`: daily request limits in the `aiUsage` collection (10 per day for the Trade Analyzer, 30 for the Coach)
+- `ai_prompts.dart`: the grounding rules and the DATA block that keep answers based on the user's real roster and stats
+
 ## Project structure
 
 ```
