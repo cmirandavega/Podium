@@ -218,7 +218,7 @@ class _ProposeTradeScreenState extends State<ProposeTradeScreen> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                         child: FilledButton(
-                          onPressed: !ready || _busy ? null : () => _submit(other!, mine, theirs),
+                          onPressed: !ready || _busy ? null : () => _submit(other, mine, theirs),
                           child: Text(isCounter ? 'Send counter-offer' : 'Send trade offer'),
                         ),
                       ),

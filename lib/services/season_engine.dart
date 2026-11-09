@@ -58,10 +58,10 @@ class SeasonEngine {
     double p(RosterSlot s) => points[s.playerId] ?? 0;
     final starters = roster.where((s) => s.isStarter).toList();
     final bench = roster.where((s) => !s.isStarter).toList();
-    final actual = starters.fold<double>(0, (sum, s) => sum + p(s));
+    final actual = starters.fold<double>(0, (total, s) => total + p(s));
 
     final best = [...roster]..sort((a, b) => p(b).compareTo(p(a)));
-    final optimal = best.take(starterCount).fold<double>(0, (sum, s) => sum + p(s));
+    final optimal = best.take(starterCount).fold<double>(0, (total, s) => total + p(s));
 
     RosterSlot? top;
     for (final s in starters) {

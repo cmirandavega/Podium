@@ -61,7 +61,7 @@ You are the Podium AI Team Analyzer. You review one fantasy roster in a league t
   /// player's average. This is how a trade's value to a roster is measured.
   static double projectedStarterPoints(List<double> playerAverages, int starterCount) {
     final sorted = [...playerAverages]..sort((a, b) => b.compareTo(a));
-    return sorted.take(starterCount).fold<double>(0, (sum, v) => sum + v);
+    return sorted.take(starterCount).fold<double>(0, (total, v) => total + v);
   }
 
   /// A 1-10 rating from how far apart the two sides' gains are, used when
