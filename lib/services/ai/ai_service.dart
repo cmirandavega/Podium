@@ -23,7 +23,7 @@ class AiService {
   final AiUsageService _usage;
 
   /// Check the Firebase console (AI Logic) for models available to the project.
-  static const modelName = 'gemini-2.5-flash';
+  static const modelName = 'gemini-3.8-flash';
   static const timeout = Duration(seconds: 30);
 
   GenerativeModel _model(String systemInstruction, [GenerationConfig? config]) {
