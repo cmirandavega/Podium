@@ -1,4 +1,3 @@
-
 rules_version = '2';
 
 service cloud.firestore {
@@ -13,25 +12,11 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    match /users/{uid} {
-      allow read: if signedIn();
-      allow create: if request.auth.uid == uid
-                    && request.resource.data.role == 'user'
-                    && request.resource.data.status == 'active';
-      allow update: if (request.auth.uid == uid
-                        && request.resource.data.role == resource.data.role
-                        && request.resource.data.status == resource.data.status)
-                    || isAdmin();
-    }
-
-    match /usernames/{name} {
-      allow read: if true;
-      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
-    }
-
-    match /sports/{sport} {
-      allow read: if signedIn();
-      allow write: if isAdmin();
+    // Suspended accounts only see the suspended screen in the app; this makes
+    // the database refuse their writes too (security audit #8).
+    function activeUser() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'suspended';
     }
 
     function isCommissionerOf(leagueId) {
@@ -44,28 +29,101 @@ service cloud.firestore {
         request.auth.uid in get(/databases/$(database)/documents/leagues/$(leagueId)).data.memberIds;
     }
 
-    // Use Case 2. Joining only adds the caller to memberIds, before the
-    // season starts and while there's room. Commissioners and admins can
-    // change league settings.
-    match /leagues/{leagueId} {
+    // Use Case 1. A profile must use the username its owner claimed, can't
+    // change its username, role, or status, and never stores the email
+    // (it stays in Firebase Authentication).
+    match /users/{uid} {
       allow read: if signedIn();
+      allow create: if request.auth.uid == uid
+                    && request.resource.data.role == 'user'
+                    && request.resource.data.status == 'active'
+                    && !('email' in request.resource.data)
+                    && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == uid;
+      allow update: if (request.auth.uid == uid
+                        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['email', 'username', 'role', 'status']))
+                    || isAdmin();
+    }
+
+    // One username per account, claimed in the same transaction that creates
+    // the profile.
+    match /usernames/{name} {
+      allow read: if true;
       allow create: if signedIn()
+                    && request.resource.data.uid == request.auth.uid
+                    && name.matches('^[a-z0-9_]{3,20}$')
+                    && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == name;
+    }
+
+    match /sports/{sport} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // Use Case 2. Only the commissioner (or an admin) changes a league,
+    // including adding members when approving join requests. Settings must
+    // stay within the ranges the app offers.
+    match /leagues/{leagueId} {
+      function validSettings(d) {
+        return d.format in ['single-sport', 'multi-sport']
+          && d.sports is list && d.sports.size() > 0 && d.sports.size() <= 4
+          && d.maxTeams is int && d.maxTeams >= 2 && d.maxTeams <= 12
+          && d.rosterSize is int && d.rosterSize >= 6 && d.rosterSize <= 16
+          && d.starterCount is int && d.starterCount >= 1 && d.starterCount <= d.rosterSize
+          && d.regularSeasonWeeks is int && d.regularSeasonWeeks >= 1 && d.regularSeasonWeeks <= 17
+          && d.playoffTeams in [0, 2, 4] && d.playoffTeams <= d.maxTeams
+          && d.memberIds is list && d.memberIds.size() <= d.maxTeams;
+      }
+
+      allow read: if signedIn();
+      allow create: if activeUser()
                     && request.resource.data.commissionerId == request.auth.uid
                     && request.resource.data.memberIds == [request.auth.uid]
-                    && request.resource.data.format in ['single-sport', 'multi-sport']
-                    && request.resource.data.sports.size() > 0;
-      allow update: if signedIn() && (
-          resource.data.commissionerId == request.auth.uid
-          || isAdmin()
-          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds'])
-              && resource.data.phase == 'preseason'
-              && !(request.auth.uid in resource.data.memberIds)
-              && request.resource.data.memberIds.hasAll(resource.data.memberIds)
-              && request.auth.uid in request.resource.data.memberIds
-              && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
-              && request.resource.data.memberIds.size() <= resource.data.maxTeams));
+                    && request.resource.data.phase == 'preseason'
+                    && request.resource.data.currentWeek == 1
+                    && request.resource.data.lineupLocked == false
+                    && validSettings(request.resource.data);
+      allow update: if (activeUser()
+                        && resource.data.commissionerId == request.auth.uid
+                        && validSettings(request.resource.data))
+                    || isAdmin();
       allow delete: if signedIn()
         && (resource.data.commissionerId == request.auth.uid || isAdmin());
+
+      // Use Case 2 (security audit #5). Users ask to join with the invite
+      // code; the commissioner approves or declines.
+      match /joinRequests/{uid} {
+        function theLeague() {
+          return get(/databases/$(database)/documents/leagues/$(leagueId)).data;
+        }
+
+        allow read: if signedIn()
+                    && (request.auth.uid == uid || theLeague().commissionerId == request.auth.uid);
+        allow create: if activeUser()
+                      && request.auth.uid == uid
+                      && request.resource.data.userId == uid
+                      && request.resource.data.status == 'pending'
+                      && request.resource.data.username == get(/databases/$(database)/documents/users/$(uid)).data.username
+                      && request.resource.data.teamName is string
+                      && request.resource.data.teamName.size() > 0
+                      && request.resource.data.teamName.size() <= 30
+                      && theLeague().phase == 'preseason'
+                      && !(uid in theLeague().memberIds);
+        allow update: if signedIn() && (
+            // Send a declined request again.
+            (activeUser()
+             && request.auth.uid == uid
+             && resource.data.status == 'declined'
+             && request.resource.data.status == 'pending'
+             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'teamName', 'createdAt'])
+             && request.resource.data.teamName.size() > 0
+             && request.resource.data.teamName.size() <= 30)
+            // Commissioner approves or declines.
+            || (theLeague().commissionerId == request.auth.uid
+                && resource.data.status == 'pending'
+                && request.resource.data.status in ['approved', 'declined']
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])));
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
 
       match /members/{uid} {
         // Use Case 13. A member's own balance changes only by the stake of
@@ -81,12 +139,22 @@ service cloud.firestore {
                 || (after.status == 'cancelled' && after.creatorId == uid && get(path).data.status == 'open' && change == after.amount));
         }
 
+        function leagueAfter() {
+          return getAfter(/databases/$(database)/documents/leagues/$(leagueId)).data;
+        }
+
         allow read: if signedIn();
-        allow create: if request.auth.uid == uid
+        // The commissioner adds their own membership when creating the
+        // league, and other members' when approving their join request.
+        allow create: if signedIn()
                       && request.resource.data.userId == uid
+                      && request.resource.data.username == get(/databases/$(database)/documents/users/$(uid)).data.username
                       && request.resource.data.isMuted == false
                       && request.resource.data.coins == 1000
-                      && uid in getAfter(/databases/$(database)/documents/leagues/$(leagueId)).data.memberIds;
+                      && uid in leagueAfter().memberIds
+                      && leagueAfter().commissionerId == request.auth.uid
+                      && (uid == request.auth.uid
+                          || getAfter(/databases/$(database)/documents/leagues/$(leagueId)/joinRequests/$(uid)).data.status == 'approved');
         // Admins can change anything. The commissioner can mute or unmute
         // (Use Case 7) and pay out wagers when scoring a week.
         allow update: if isAdmin()
@@ -96,25 +164,31 @@ service cloud.firestore {
                       || (get(/databases/$(database)/documents/leagues/$(leagueId)).data.commissionerId == request.auth.uid
                           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['coins'])
                           && request.resource.data.coins > resource.data.coins)
-                      || (request.auth.uid == uid
+                      || (activeUser()
+                          && request.auth.uid == uid
                           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['coins', 'lastWagerId'])
                           && request.resource.data.coins >= 0
                           && wagerEscrow());
       }
 
-      // Use Case 7. Members who aren't muted can post as themselves.
-      // Senders, the commissioner, and admins can soft-delete a message.
+      // Use Case 7. Members who aren't muted post as themselves, under their
+      // own username. Senders, the commissioner, and admins can soft-delete.
       match /messages/{messageId} {
         function league() {
           return get(/databases/$(database)/documents/leagues/$(leagueId)).data;
         }
 
+        function myMembership() {
+          return get(/databases/$(database)/documents/leagues/$(leagueId)/members/$(request.auth.uid)).data;
+        }
+
         allow read: if signedIn() && (request.auth.uid in league().memberIds || isAdmin());
-        allow create: if signedIn()
+        allow create: if activeUser()
                       && request.auth.uid in league().memberIds
-                      && get(/databases/$(database)/documents/leagues/$(leagueId)/members/$(request.auth.uid)).data.isMuted == false
+                      && myMembership().isMuted == false
                       && request.resource.data.keys().hasOnly(['senderId', 'senderName', 'body', 'isDeleted', 'createdAt'])
                       && request.resource.data.senderId == request.auth.uid
+                      && request.resource.data.senderName == myMembership().username
                       && request.resource.data.body is string
                       && request.resource.data.body.size() > 0
                       && request.resource.data.body.size() <= 500
@@ -139,60 +213,143 @@ service cloud.firestore {
       allow delete: if isCommissionerOf(resource.data.leagueId);
     }
 
-    // Use Case 3. One team per user per league: the doc ID is
-    // {leagueId}_{ownerId}, and the owner must be a league member (checked
-    // after the batch that creates the membership).
+    // Use Case 3. One team per user per league (doc ID {leagueId}_{ownerId}).
+    // rosterCount always matches the team's roster slots and never passes
+    // the league's roster size (security audit #4).
     match /teams/{teamId} {
+      function leagueOf(leagueId) {
+        return get(/databases/$(database)/documents/leagues/$(leagueId)).data;
+      }
+
+      // Adding or dropping one player: the count and the slot change together.
+      function rosterChange() {
+        let slotPath = /databases/$(database)/documents/rosterSlots/$(request.resource.data.lastSlotId);
+        let before = resource.data.get('rosterCount', 0);
+        let after = request.resource.data.rosterCount;
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rosterCount', 'lastSlotId'])
+          && ((after == before + 1
+               && !exists(slotPath)
+               && existsAfter(slotPath)
+               && getAfter(slotPath).data.teamId == teamId
+               && after <= leagueOf(resource.data.leagueId).rosterSize)
+              || (after == before - 1
+                  && exists(slotPath)
+                  && !existsAfter(slotPath)
+                  && get(slotPath).data.teamId == teamId));
+      }
+
+      // Accepting a trade: each team's count changes by players gained minus
+      // players given up.
+      function tradeCount() {
+        let tradePath = /databases/$(database)/documents/trades/$(request.resource.data.lastTradeId);
+        let t = getAfter(tradePath).data;
+        let gained = teamId == t.proposerTeamId
+          ? t.requestedIds.size() - t.offeredIds.size()
+          : t.offeredIds.size() - t.requestedIds.size();
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rosterCount', 'lastTradeId'])
+          && get(tradePath).data.status == 'pending'
+          && t.status == 'completed'
+          && t.receiverId == request.auth.uid
+          && (teamId == t.proposerTeamId || teamId == t.receiverTeamId)
+          && request.resource.data.rosterCount == resource.data.get('rosterCount', 0) + gained
+          && request.resource.data.rosterCount <= leagueOf(resource.data.leagueId).rosterSize;
+      }
+
       allow read: if signedIn();
-      allow create: if signedIn()
-                    && request.resource.data.ownerId == request.auth.uid
-                    && teamId == request.resource.data.leagueId + '_' + request.auth.uid
-                    && request.auth.uid in getAfter(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.memberIds;
-      // Owners rename; the commissioner updates the record when scoring
-      // a week (Use Case 15).
+      // Created with the league (the commissioner's own team) or when the
+      // commissioner approves a join request.
+      allow create: if activeUser()
+                    && teamId == request.resource.data.leagueId + '_' + request.resource.data.ownerId
+                    && request.resource.data.rosterCount == 0
+                    && request.resource.data.wins == 0
+                    && request.resource.data.losses == 0
+                    && request.resource.data.pointsFor == 0
+                    && request.resource.data.ownerId in getAfter(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.memberIds
+                    && getAfter(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.commissionerId == request.auth.uid
+                    && (request.resource.data.ownerId == request.auth.uid
+                        || getAfter(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)/joinRequests/$(request.resource.data.ownerId)).data.status == 'approved');
       allow update: if signedIn() && (
-          (resource.data.ownerId == request.auth.uid
-           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamName']))
+          (activeUser()
+           && resource.data.ownerId == request.auth.uid
+           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamName'])
+           && request.resource.data.teamName.size() > 0
+           && request.resource.data.teamName.size() <= 30)
+          || (activeUser() && resource.data.ownerId == request.auth.uid && rosterChange())
+          || (activeUser() && tradeCount())
           || (isCommissionerOf(resource.data.leagueId)
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['wins', 'losses', 'ties', 'pointsFor'])));
     }
 
-    // Use Case 8. Members propose trades from their own team. The receiver
-    // can accept (completed), reject, or counter; the proposer can cancel.
+    // Use Case 8. offeredIds and requestedIds list every player in the trade.
+    // Completing it requires every one of them to move to the other team in
+    // the same write, and both teams' roster counts to update (audit #1).
     match /trades/{tradeId} {
+      function slotTeam(leagueId, playerId) {
+        return getAfter(/databases/$(database)/documents/rosterSlots/$(leagueId + '_' + playerId)).data.teamId;
+      }
+
+      function sideMoved(t, ids, toTeam) {
+        return (ids.size() < 1 || slotTeam(t.leagueId, ids[0]) == toTeam)
+          && (ids.size() < 2 || slotTeam(t.leagueId, ids[1]) == toTeam)
+          && (ids.size() < 3 || slotTeam(t.leagueId, ids[2]) == toTeam)
+          && (ids.size() < 4 || slotTeam(t.leagueId, ids[3]) == toTeam);
+      }
+
+      function teamsCounted(t) {
+        return getAfter(/databases/$(database)/documents/teams/$(t.proposerTeamId)).data.get('lastTradeId', '') == tradeId
+          && getAfter(/databases/$(database)/documents/teams/$(t.receiverTeamId)).data.get('lastTradeId', '') == tradeId;
+      }
+
       allow read: if signedIn();
-      allow create: if signedIn()
+      allow create: if activeUser()
                     && request.resource.data.proposerId == request.auth.uid
                     && request.resource.data.proposerTeamId == request.resource.data.leagueId + '_' + request.auth.uid
                     && request.resource.data.receiverTeamId == request.resource.data.leagueId + '_' + request.resource.data.receiverId
                     && request.resource.data.receiverId != request.auth.uid
                     && request.resource.data.status == 'pending'
-                    && isMemberOf(request.resource.data.leagueId);
-      allow update: if signedIn()
+                    && request.resource.data.offeredIds is list
+                    && request.resource.data.offeredIds.size() >= 1
+                    && request.resource.data.offeredIds.size() <= 4
+                    && request.resource.data.requestedIds is list
+                    && request.resource.data.requestedIds.size() >= 1
+                    && request.resource.data.requestedIds.size() <= 4
+                    && isMemberOf(request.resource.data.leagueId)
+                    && request.resource.data.receiverId in get(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.memberIds;
+      allow update: if activeUser()
                     && resource.data.status == 'pending'
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
                     && ((resource.data.receiverId == request.auth.uid
-                         && request.resource.data.status in ['completed', 'rejected', 'countered'])
+                         && request.resource.data.status in ['rejected', 'countered'])
+                        || (resource.data.receiverId == request.auth.uid
+                            && request.resource.data.status == 'completed'
+                            && sideMoved(resource.data, resource.data.offeredIds, resource.data.receiverTeamId)
+                            && sideMoved(resource.data, resource.data.requestedIds, resource.data.proposerTeamId)
+                            && teamsCounted(resource.data))
                         || (resource.data.proposerId == request.auth.uid
                             && request.resource.data.status == 'cancelled'));
 
-      // Each item must be a player currently on one of the two teams.
+      // Items are written only in the batch that creates the trade, and each
+      // must be a listed player currently on the stated team.
       match /items/{playerId} {
+        function theTrade() {
+          return getAfter(/databases/$(database)/documents/trades/$(tradeId)).data;
+        }
+
         allow read: if signedIn();
         allow create: if signedIn()
-                      && getAfter(/databases/$(database)/documents/trades/$(tradeId)).data.proposerId == request.auth.uid
-                      && getAfter(/databases/$(database)/documents/trades/$(tradeId)).data.status == 'pending'
+                      && !exists(/databases/$(database)/documents/trades/$(tradeId))
+                      && theTrade().proposerId == request.auth.uid
                       && request.resource.data.playerId == playerId
-                      && request.resource.data.fromTeamId in [
-                           getAfter(/databases/$(database)/documents/trades/$(tradeId)).data.proposerTeamId,
-                           getAfter(/databases/$(database)/documents/trades/$(tradeId)).data.receiverTeamId]
-                      && get(/databases/$(database)/documents/rosterSlots/$(getAfter(/databases/$(database)/documents/trades/$(tradeId)).data.leagueId + '_' + playerId)).data.teamId == request.resource.data.fromTeamId;
+                      && ((playerId in theTrade().offeredIds && request.resource.data.fromTeamId == theTrade().proposerTeamId)
+                          || (playerId in theTrade().requestedIds && request.resource.data.fromTeamId == theTrade().receiverTeamId))
+                      && get(/databases/$(database)/documents/rosterSlots/$(theTrade().leagueId + '_' + playerId)).data.teamId == request.resource.data.fromTeamId;
       }
     }
 
     // Use Case 13. Members post wagers on this week's games before lineups
     // lock; another member can take the open side; the commissioner settles
-    // them when scoring the week.
+    // them when scoring the week. Posting or taking a wager must take the
+    // stake from the member's balance in the same write (audit #3).
     match /wagers/{wagerId} {
       function wagerLeague(leagueId) {
         return get(/databases/$(database)/documents/leagues/$(leagueId)).data;
@@ -202,8 +359,14 @@ service cloud.firestore {
         return get(/databases/$(database)/documents/matchups/$(matchupId)).data;
       }
 
+      function stakePaid(leagueId, amount) {
+        let member = /databases/$(database)/documents/leagues/$(leagueId)/members/$(request.auth.uid);
+        return getAfter(member).data.get('lastWagerId', '') == wagerId
+          && getAfter(member).data.coins == get(member).data.coins - amount;
+      }
+
       allow read: if signedIn();
-      allow create: if signedIn()
+      allow create: if activeUser()
                     && request.resource.data.creatorId == request.auth.uid
                     && request.resource.data.status == 'open'
                     && request.resource.data.amount is int
@@ -215,18 +378,22 @@ service cloud.firestore {
                     && wagerGame(request.resource.data.matchupId).status == 'scheduled'
                     && request.resource.data.pickTeamId in [
                          wagerGame(request.resource.data.matchupId).homeTeamId,
-                         wagerGame(request.resource.data.matchupId).awayTeamId];
+                         wagerGame(request.resource.data.matchupId).awayTeamId]
+                    && stakePaid(request.resource.data.leagueId, request.resource.data.amount);
       allow update: if signedIn() && (
           // Take the other side of an open offer.
-          (resource.data.status == 'open'
+          (activeUser()
+           && resource.data.status == 'open'
            && request.resource.data.status == 'matched'
            && request.resource.data.opponentId == request.auth.uid
            && resource.data.creatorId != request.auth.uid
            && request.auth.uid in wagerLeague(resource.data.leagueId).memberIds
            && wagerLeague(resource.data.leagueId).lineupLocked == false
-           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'opponentId', 'opponentName']))
+           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'opponentId', 'opponentName'])
+           && stakePaid(resource.data.leagueId, resource.data.amount))
           // Withdraw your own open offer.
-          || (resource.data.status == 'open'
+          || (activeUser()
+              && resource.data.status == 'open'
               && request.resource.data.status == 'cancelled'
               && resource.data.creatorId == request.auth.uid
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
@@ -240,15 +407,15 @@ service cloud.firestore {
     // Use Case 4. Saved analyses are private to the user who ran them.
     match /tradeAnalyses/{analysisId} {
       allow read: if signedIn() && resource.data.userId == request.auth.uid;
-      allow create: if signedIn()
+      allow create: if activeUser()
                     && request.resource.data.userId == request.auth.uid
                     && request.resource.data.analysisType in ['trade', 'roster']
                     && request.resource.data.explanation is string
                     && request.resource.data.explanation.size() <= 4000;
     }
 
-    // Use Cases 5 and 15. Only the commissioner writes schedules, results,
-    // and weekly reports; everyone signed in can read them.
+    // Use Cases 5 and 15. Only a league's commissioner writes its schedule,
+    // results, and weekly reports, and only for teams in that league.
     match /matchups/{matchupId} {
       allow read: if signedIn();
       allow create, update: if isCommissionerOf(request.resource.data.leagueId)
@@ -258,12 +425,14 @@ service cloud.firestore {
     match /weeklyReports/{reportId} {
       allow read: if signedIn();
       allow create, update: if isCommissionerOf(request.resource.data.leagueId)
-                            && reportId == request.resource.data.teamId + '_' + request.resource.data.scoringPeriodId;
+                            && reportId == request.resource.data.teamId + '_' + request.resource.data.scoringPeriodId
+                            && request.resource.data.teamId.matches('^' + request.resource.data.leagueId + '_.*');
     }
 
     // Use Case 3. The doc ID {leagueId}_{playerId} means a player is on at
-    // most one roster per league. Owners change only their own team, only
-    // with players from the league's sports, and not while lineups are locked.
+    // most one roster per league. Members change only their own team, only
+    // with real players from the league's sports, never past the roster
+    // size, and not while lineups are locked (audit #4).
     match /rosterSlots/{slotId} {
       function slotLeague(leagueId) {
         return get(/databases/$(database)/documents/leagues/$(leagueId)).data;
@@ -273,44 +442,55 @@ service cloud.firestore {
         return leagueId + '_' + request.auth.uid;
       }
 
-      // Accepting a trade (Use Case 8) moves each traded player to the other
-      // team's bench. Allowed only for players listed in that trade, while
-      // the trade goes from pending to completed in the same write.
+      function teamPath(teamId) {
+        return /databases/$(database)/documents/teams/$(teamId);
+      }
+
+      // Accepting a trade moves each listed player to the other team's bench.
       function tradeMove() {
         let tradePath = /databases/$(database)/documents/trades/$(request.resource.data.lastTradeId);
         let before = get(tradePath).data;
         let after = getAfter(tradePath).data;
-        let item = get(/databases/$(database)/documents/trades/$(request.resource.data.lastTradeId)/items/$(resource.data.playerId)).data;
         return before.status == 'pending'
           && after.status == 'completed'
           && after.receiverId == request.auth.uid
           && after.leagueId == resource.data.leagueId
-          && item.fromTeamId == resource.data.teamId
-          && request.resource.data.teamId == (item.fromTeamId == after.proposerTeamId ? after.receiverTeamId : after.proposerTeamId)
+          && ((resource.data.playerId in after.offeredIds
+               && resource.data.teamId == after.proposerTeamId
+               && request.resource.data.teamId == after.receiverTeamId)
+              || (resource.data.playerId in after.requestedIds
+                  && resource.data.teamId == after.receiverTeamId
+                  && request.resource.data.teamId == after.proposerTeamId))
           && request.resource.data.isStarter == false;
       }
 
       allow read: if signedIn();
-      allow create: if signedIn()
+      allow create: if activeUser()
                     && slotId == request.resource.data.leagueId + '_' + request.resource.data.playerId
                     && request.resource.data.teamId == ownTeamId(request.resource.data.leagueId)
+                    && request.auth.uid in slotLeague(request.resource.data.leagueId).memberIds
                     && slotLeague(request.resource.data.leagueId).lineupLocked == false
-                    && request.resource.data.sport in slotLeague(request.resource.data.leagueId).sports;
-      allow update: if signedIn()
+                    && request.resource.data.sport in slotLeague(request.resource.data.leagueId).sports
+                    && get(/databases/$(database)/documents/players/$(request.resource.data.playerId)).data.sport == request.resource.data.sport
+                    && getAfter(teamPath(request.resource.data.teamId)).data.get('lastSlotId', '') == slotId
+                    && getAfter(teamPath(request.resource.data.teamId)).data.rosterCount == get(teamPath(request.resource.data.teamId)).data.get('rosterCount', 0) + 1;
+      allow update: if activeUser()
                     && slotLeague(resource.data.leagueId).lineupLocked == false
                     && ((resource.data.teamId == ownTeamId(resource.data.leagueId)
                          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isStarter']))
                         || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamId', 'isStarter', 'lastTradeId', 'acquiredAt'])
                             && tradeMove()));
-      allow delete: if signedIn()
+      allow delete: if activeUser()
                     && resource.data.teamId == ownTeamId(resource.data.leagueId)
-                    && slotLeague(resource.data.leagueId).lineupLocked == false;
+                    && slotLeague(resource.data.leagueId).lineupLocked == false
+                    && getAfter(teamPath(resource.data.teamId)).data.rosterCount == get(teamPath(resource.data.teamId)).data.get('rosterCount', 0) - 1;
     }
 
     match /leaderboard/{entryId} {
       allow read: if signedIn();
       allow write: if isAdmin();
-    } 
+    }
+
     // Written only by the ingestion script (Admin SDK); readable by any signed-in user.
     match /players/{playerId} {
       allow read: if signedIn();
@@ -408,30 +588,41 @@ service cloud.firestore {
 
       allow update, delete: if false;
     }
-    // Use Case 6: users see only their own notifications and can only mark them read.
-    // Admins can send notifications to any user (for example, account status changes).
+
+    // Use Case 6: users see only their own notifications and can only mark
+    // them read. Admins can notify anyone; trade and join notices go only to
+    // the other person involved.
     match /notifications/{notificationId} {
-      // Trade notices go only to the other team in that trade (Use Cases 6 and 8).
       function tradeNotice() {
         let trade = getAfter(/databases/$(database)/documents/trades/$(request.resource.data.relatedId)).data;
         return (trade.proposerId == request.auth.uid && request.resource.data.userId == trade.receiverId)
           || (trade.receiverId == request.auth.uid && request.resource.data.userId == trade.proposerId);
       }
+
+      function joinNotice() {
+        let leagueDoc = get(/databases/$(database)/documents/leagues/$(request.resource.data.relatedId)).data;
+        return (request.resource.data.type == 'join_request'
+                && request.resource.data.userId == leagueDoc.commissionerId
+                && existsAfter(/databases/$(database)/documents/leagues/$(request.resource.data.relatedId)/joinRequests/$(request.auth.uid)))
+          || (request.resource.data.type == 'join_update'
+              && leagueDoc.commissionerId == request.auth.uid
+              && exists(/databases/$(database)/documents/leagues/$(request.resource.data.relatedId)/joinRequests/$(request.resource.data.userId)));
+      }
+
       allow read: if signedIn() && resource.data.userId == request.auth.uid;
       allow create: if signedIn()
                     && request.resource.data.isRead == false
                     && (request.resource.data.userId == request.auth.uid
                         || isAdmin()
-                        || (request.resource.data.type in ['trade_offer', 'trade_update'] && tradeNotice()));
-
+                        || (request.resource.data.type in ['trade_offer', 'trade_update'] && tradeNotice())
+                        || (request.resource.data.type in ['join_request', 'join_update'] && joinNotice()));
       allow update: if signedIn()
                     && resource.data.userId == request.auth.uid
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
     }
 
     // Use Case 12. Each team's Coach conversation is private to its owner.
-    // The doc ID is the team ID, which starts with the league ID and ends
-    // with the owner's uid.
+    // The doc ID is the team ID, which ends with the owner's uid.
     match /coachConversations/{conversationId} {
       // Checked on the ID so the owner can read before the doc exists.
       function ownsConversation() {
@@ -439,19 +630,19 @@ service cloud.firestore {
       }
 
       allow read: if ownsConversation();
-      allow create, update: if signedIn()
+      allow create, update: if activeUser()
                             && request.resource.data.userId == request.auth.uid
                             && conversationId == request.resource.data.teamId
                             && request.resource.data.teamId.matches('.*_' + request.auth.uid + '$');
 
       match /messages/{messageId} {
         allow read: if ownsConversation();
-        allow create: if signedIn()
+        allow create: if activeUser()
                       && ownsConversation()
                       && request.resource.data.role in ['user', 'assistant']
                       && request.resource.data.content is string
                       && request.resource.data.content.size() <= 4000;
-        allow update: if signedIn()
+        allow update: if activeUser()
                       && ownsConversation()
                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['suggestionStatus'])
                       && request.resource.data.suggestionStatus in ['applied', 'dismissed'];
@@ -482,10 +673,10 @@ service cloud.firestore {
       // it exists (the first request of the day).
       allow read: if signedIn()
                   && (usageId.matches('^' + request.auth.uid + '_.*') || isAdmin());
-      allow create: if signedIn()
+      allow create: if activeUser()
                     && validUsage(request.resource.data)
                     && request.resource.data.requestCount == 1;
-      allow update: if signedIn()
+      allow update: if activeUser()
                     && resource.data.userId == request.auth.uid
                     && validUsage(request.resource.data)
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['requestCount'])

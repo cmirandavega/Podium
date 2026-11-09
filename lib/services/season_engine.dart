@@ -56,7 +56,14 @@ class SeasonEngine {
     required int starterCount,
   }) {
     double p(RosterSlot s) => points[s.playerId] ?? 0;
-    final starters = roster.where((s) => s.isStarter).toList();
+    var starters = roster.where((s) => s.isStarter).toList();
+    // The app never allows more than starterCount starters, but a direct
+    // database write could. Count only the lowest-scoring starterCount, so
+    // starting extra players can never help a team.
+    if (starters.length > starterCount) {
+      starters.sort((a, b) => p(a).compareTo(p(b)));
+      starters = starters.take(starterCount).toList();
+    }
     final bench = roster.where((s) => !s.isStarter).toList();
     final actual = starters.fold<double>(0, (total, s) => total + p(s));
 

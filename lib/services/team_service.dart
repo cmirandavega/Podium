@@ -132,10 +132,18 @@ class TeamService {
 
     final starters = roster.where((s) => s.isStarter).length;
     final ref = _slots.doc(RosterSlot.idFor(league.id, player.playerId));
+    final teamRef = _teams.doc(teamId);
 
     await _db.runTransaction((transaction) async {
       final existing = await transaction.get(ref);
       if (existing.exists) throw StateError('${player.fullName} is already on a roster.');
+      final team = await transaction.get(teamRef);
+      final count = (team.data()?['rosterCount'] as num?)?.toInt() ?? 0;
+      if (count >= league.rosterSize) {
+        throw StateError('Your roster is full (${league.rosterSize} players). Drop someone first.');
+      }
+      // Security rules check that rosterCount and the new slot change together.
+      transaction.update(teamRef, {'rosterCount': count + 1, 'lastSlotId': ref.id});
       transaction.set(ref, {
         'leagueId': league.id,
         'playerId': player.playerId,
@@ -157,7 +165,13 @@ class TeamService {
     if (slot.teamId != Team.idFor(league.id, _uid)) {
       throw StateError('You can only change your own roster.');
     }
-    await _slots.doc(slot.id).delete();
+    final teamRef = _teams.doc(slot.teamId);
+    await _db.runTransaction((transaction) async {
+      final team = await transaction.get(teamRef);
+      final count = (team.data()?['rosterCount'] as num?)?.toInt() ?? 0;
+      transaction.update(teamRef, {'rosterCount': count > 0 ? count - 1 : 0, 'lastSlotId': slot.id});
+      transaction.delete(_slots.doc(slot.id));
+    });
   }
 
   Future<void> setStarter({

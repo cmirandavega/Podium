@@ -5,6 +5,9 @@
 // league's season, best players first, snake order. Uses the Admin SDK, so it
 // bypasses security rules: run it only against your own project.
 //
+// Safe to re-run: with the league already full it adds no bots, tops up any roster that
+// isn't full, and refreshes every team's rosterCount.
+//
 // Usage (from scripts/firestore-seed, with serviceAccountKey.json in place):
 //   node demo-league.js <INVITE_CODE> [botCount]
 // Example:
@@ -41,7 +44,7 @@ async function main() {
     const username = `bot_${(i + 1).toString().padStart(2, '0')}_${leagueId.slice(0, 4).toLowerCase()}`;
     botIds.push(uid);
     batch.set(db.doc(`users/${uid}`), {
-      username, email: `${username}@bots.podium.app`, displayName: BOT_NAMES[i % BOT_NAMES.length],
+      username, displayName: BOT_NAMES[i % BOT_NAMES.length],
       role: 'user', status: 'active', createdAt: FieldValue.serverTimestamp(),
     });
     batch.set(db.doc(`usernames/${username}`), { uid });
@@ -50,7 +53,7 @@ async function main() {
     });
     batch.set(db.doc(`teams/${leagueId}_${uid}`), {
       leagueId, ownerId: uid, teamName: BOT_NAMES[i % BOT_NAMES.length],
-      wins: 0, losses: 0, ties: 0, pointsFor: 0, createdAt: FieldValue.serverTimestamp(),
+      wins: 0, losses: 0, ties: 0, pointsFor: 0, rosterCount: 0, createdAt: FieldValue.serverTimestamp(),
     });
   }
   if (botIds.length) batch.update(leagueRef, { memberIds: FieldValue.arrayUnion(...botIds) });
@@ -103,6 +106,12 @@ async function main() {
     await chunk.commit();
   }
   console.log(`Drafted ${writes.length} players across ${teams.length} teams.`);
+
+  // 4. Store each team's roster size, which the security rules use to enforce the limit.
+  const countBatch = db.batch();
+  for (const teamId of teams) countBatch.update(db.doc(`teams/${teamId}`), { rosterCount: counts[teamId] });
+  await countBatch.commit();
+  console.log('Updated roster counts.');
 }
 
 main().catch((error) => {

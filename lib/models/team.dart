@@ -16,6 +16,7 @@ class Team {
     this.losses = 0,
     this.ties = 0,
     this.pointsFor = 0,
+    this.rosterCount = 0,
     this.createdAt,
   });
 
@@ -27,6 +28,10 @@ class Team {
   final int losses;
   final int ties;
   final double pointsFor;
+
+  /// Players on the roster. Kept on the team so security rules can enforce
+  /// the league's roster size (Sprint 4 security fix).
+  final int rosterCount;
   final DateTime? createdAt;
 
   static String idFor(String leagueId, String ownerId) => '${leagueId}_$ownerId';
@@ -52,6 +57,7 @@ class Team {
         'losses': 0,
         'ties': 0,
         'pointsFor': 0.0,
+        'rosterCount': 0,
         'createdAt': FieldValue.serverTimestamp(),
       };
 
@@ -66,6 +72,7 @@ class Team {
       losses: (data['losses'] as num?)?.toInt() ?? 0,
       ties: (data['ties'] as num?)?.toInt() ?? 0,
       pointsFor: (data['pointsFor'] as num?)?.toDouble() ?? 0,
+      rosterCount: (data['rosterCount'] as num?)?.toInt() ?? 0,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
     );
   }

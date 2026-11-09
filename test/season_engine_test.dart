@@ -68,6 +68,20 @@ void main() {
       expect(score.bestBenchPoints, 20);
     });
 
+    test('starting more than the limit never helps: only the lowest starters count', () {
+      final roster = [
+        slot('s1', starter: true),
+        slot('s2', starter: true),
+        slot('s3', starter: true),
+      ];
+      final score = SeasonEngine.scoreTeam(
+        roster: roster,
+        points: {'s1': 30, 's2': 10, 's3': 5},
+        starterCount: 2,
+      );
+      expect(score.points, 15);
+    });
+
     test('ties have no winner in the regular season; home wins playoff ties', () {
       expect(SeasonEngine.winner(home: 'A', away: 'B', homeScore: 90, awayScore: 90), isNull);
       expect(SeasonEngine.winner(home: 'A', away: 'B', homeScore: 90, awayScore: 90, playoff: true), 'A');

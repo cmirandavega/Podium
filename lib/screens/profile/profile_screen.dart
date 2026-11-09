@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/app_user.dart';
@@ -114,7 +115,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             _InfoRow(label: 'Username', value: '@${user.username}'),
 
-            _InfoRow(label: 'Email', value: user.email),
+            _InfoRow(label: 'Email', value: FirebaseAuth.instance.currentUser?.email ?? ''),
 
             _InfoRow(
               label: 'Account type',

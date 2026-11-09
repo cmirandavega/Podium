@@ -122,3 +122,33 @@ class LeagueMember {
     );
   }
 }
+
+/// A request to join a league, stored at leagues/{leagueId}/joinRequests/{userId}
+/// (Use Case 2, Sprint 4). The commissioner approves or declines it; approving
+/// adds the member and creates their team.
+class JoinRequest {
+  const JoinRequest({
+    required this.userId,
+    required this.username,
+    required this.teamName,
+    required this.status,
+    this.createdAt,
+  });
+
+  final String userId;
+  final String username;
+  final String teamName;
+  final String status; // "pending", "approved", "declined"
+  final DateTime? createdAt;
+
+  factory JoinRequest.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data() ?? <String, dynamic>{};
+    return JoinRequest(
+      userId: data['userId'] as String? ?? doc.id,
+      username: data['username'] as String? ?? '',
+      teamName: data['teamName'] as String? ?? '',
+      status: data['status'] as String? ?? 'pending',
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+    );
+  }
+}

@@ -6,11 +6,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/league.dart';
 import '../models/sport.dart';
 import '../models/team.dart';
+import 'notification_service.dart';
 
 /// Use Case 2: creating leagues, choosing their sports, and joining them.
 ///
-/// Creating or joining a league also creates the user's team in the same
-/// batch, so a member always has a team (Use Case 3 builds the roster).
+/// Joining takes the commissioner's approval: a user sends a join request
+/// with the invite code, and approving it adds the member and creates their
+/// team in one transaction, so a member always has a team.
 class LeagueService {
   LeagueService({FirebaseFirestore? db, FirebaseAuth? auth})
       : _db = db ?? FirebaseFirestore.instance,
@@ -170,8 +172,10 @@ class LeagueService {
     return leagueRef.id;
   }
 
-  /// Joins a league with its invite code and creates the user's team.
-  Future<String> joinLeague({
+  /// Sends a request to join the league with this invite code. The
+  /// commissioner approves it before the user becomes a member. Returns the
+  /// league's name.
+  Future<String> requestToJoin({
     required String inviteCode,
     required String teamName,
     required String username,
@@ -183,28 +187,112 @@ class LeagueService {
 
     final match = await _leagues.where('inviteCode', isEqualTo: code).limit(1).get();
     if (match.docs.isEmpty) throw StateError('No league uses that invite code.');
-    final leagueRef = match.docs.first.reference;
+    final league = League.fromFirestore(match.docs.first);
+    if (league.hasMember(user.uid)) throw StateError("You're already in this league.");
+    if (league.status != 'active') throw StateError('This league has ended.');
+    if (league.phase != 'preseason') throw StateError('This league has already started its season.');
+    if (league.isFull) throw StateError('This league is full.');
+
+    final requestRef = _leagues.doc(league.id).collection('joinRequests').doc(user.uid);
+    final existing = await requestRef.get();
+    if (existing.exists && existing.data()?['status'] == 'pending') {
+      throw StateError('Your request is already waiting for the commissioner.');
+    }
+
+    final batch = _db.batch();
+    if (existing.exists) {
+      // A declined request can be sent again.
+      batch.update(requestRef, {
+        'status': 'pending',
+        'teamName': teamName.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } else {
+      batch.set(requestRef, {
+        'userId': user.uid,
+        'username': username,
+        'teamName': teamName.trim(),
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+    batch.set(
+      _db.collection('notifications').doc(),
+      NotificationService.newNotificationData(
+        userId: league.commissionerId,
+        type: 'join_request',
+        message: '@$username asked to join ${league.name}.',
+        relatedId: league.id,
+      ),
+    );
+    await batch.commit();
+    return league.name;
+  }
+
+  /// Pending requests, oldest first. Commissioner only.
+  Stream<List<JoinRequest>> watchJoinRequests(String leagueId) => _leagues
+      .doc(leagueId)
+      .collection('joinRequests')
+      .where('status', isEqualTo: 'pending')
+      .snapshots()
+      .map((q) {
+        final list = q.docs.map(JoinRequest.fromFirestore).toList();
+        list.sort((a, b) => (a.createdAt ?? DateTime(0)).compareTo(b.createdAt ?? DateTime(0)));
+        return list;
+      });
+
+  /// Commissioner approves: the user becomes a member and gets their team,
+  /// all in one transaction.
+  Future<void> approveRequest({required League league, required JoinRequest request}) async {
+    final user = _user;
+    if (!league.isCommissioner(user.uid)) throw StateError('Only the commissioner can approve requests.');
+    final leagueRef = _leagues.doc(league.id);
+    final requestRef = leagueRef.collection('joinRequests').doc(request.userId);
 
     await _db.runTransaction((transaction) async {
-      final snapshot = await transaction.get(leagueRef);
-      final league = League.fromFirestore(snapshot);
-      if (league.hasMember(user.uid)) throw StateError("You're already in this league.");
-      if (league.status != 'active') throw StateError('This league has ended.');
-      if (league.phase != 'preseason') {
-        throw StateError('This league has already started its season.');
-      }
-      if (league.isFull) throw StateError('This league is full.');
+      final current = League.fromFirestore(await transaction.get(leagueRef));
+      final pending = await transaction.get(requestRef);
+      if (pending.data()?['status'] != 'pending') throw StateError('This request was already handled.');
+      if (current.phase != 'preseason') throw StateError('The season has already started.');
+      if (current.isFull) throw StateError('The league is full.');
+      if (current.hasMember(request.userId)) throw StateError('@${request.username} is already a member.');
 
+      transaction.update(requestRef, {'status': 'approved'});
       transaction.update(leagueRef, {
-        'memberIds': FieldValue.arrayUnion([user.uid]),
+        'memberIds': FieldValue.arrayUnion([request.userId]),
       });
-      transaction.set(leagueRef.collection('members').doc(user.uid), _memberData(user.uid, username));
+      transaction.set(leagueRef.collection('members').doc(request.userId), _memberData(request.userId, request.username));
       transaction.set(
-        _db.collection('teams').doc(Team.idFor(leagueRef.id, user.uid)),
-        Team.newTeamData(leagueId: leagueRef.id, ownerId: user.uid, teamName: teamName),
+        _db.collection('teams').doc(Team.idFor(league.id, request.userId)),
+        Team.newTeamData(leagueId: league.id, ownerId: request.userId, teamName: request.teamName),
+      );
+      transaction.set(
+        _db.collection('notifications').doc(),
+        NotificationService.newNotificationData(
+          userId: request.userId,
+          type: 'join_update',
+          message: 'You were approved to join ${league.name}. Build your roster!',
+          relatedId: league.id,
+        ),
       );
     });
-    return leagueRef.id;
+  }
+
+  Future<void> declineRequest({required League league, required JoinRequest request}) async {
+    final user = _user;
+    if (!league.isCommissioner(user.uid)) throw StateError('Only the commissioner can decline requests.');
+    final batch = _db.batch();
+    batch.update(_leagues.doc(league.id).collection('joinRequests').doc(request.userId), {'status': 'declined'});
+    batch.set(
+      _db.collection('notifications').doc(),
+      NotificationService.newNotificationData(
+        userId: request.userId,
+        type: 'join_update',
+        message: 'Your request to join ${league.name} was declined.',
+        relatedId: league.id,
+      ),
+    );
+    await batch.commit();
   }
 
   /// Commissioner edits the league's sports before the season starts

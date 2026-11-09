@@ -25,6 +25,10 @@ class TradeService {
 
   CollectionReference<Map<String, dynamic>> get _trades => _db.collection('trades');
 
+  /// Kept small so the security rules can check every traded player within
+  /// Firestore's limit on document reads per request.
+  static const maxPerSide = 4;
+
   String get _uid {
     final user = _auth.currentUser;
     if (user == null) throw StateError('You must be logged in.');
@@ -43,7 +47,6 @@ class TradeService {
     if (offeredCount == 0 || requestedCount == 0) {
       return 'Pick at least one player on each side of the trade.';
     }
-    const maxPerSide = 5;
     if (offeredCount > maxPerSide || requestedCount > maxPerSide) {
       return 'Trades can include up to $maxPerSide players per side.';
     }
@@ -115,6 +118,10 @@ class TradeService {
       'proposerId': uid,
       'receiverId': receiver.ownerId,
       'parentTradeId': parentTradeId,
+      // Lists of player IDs let the security rules check that accepting the
+      // trade moves every player, not just some.
+      'offeredIds': [for (final s in offered) s.playerId],
+      'requestedIds': [for (final s in requested) s.playerId],
       'status': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
       'reviewEndsAt': null,
@@ -174,6 +181,22 @@ class TradeService {
           throw StateError('${item.playerName} is no longer on the same roster, so this trade can\'t complete.');
         }
       }
+
+      // Each team's roster count changes by the players it gains minus the
+      // players it gives up.
+      final proposerRef = _db.collection('teams').doc(trade.proposerTeamId);
+      final receiverRef = _db.collection('teams').doc(trade.receiverTeamId);
+      final proposerTeam = await transaction.get(proposerRef);
+      final receiverTeam = await transaction.get(receiverRef);
+      final delta = trade.requested.length - trade.offered.length;
+      transaction.update(proposerRef, {
+        'rosterCount': ((proposerTeam.data()?['rosterCount'] as num?)?.toInt() ?? 0) + delta,
+        'lastTradeId': trade.id,
+      });
+      transaction.update(receiverRef, {
+        'rosterCount': ((receiverTeam.data()?['rosterCount'] as num?)?.toInt() ?? 0) - delta,
+        'lastTradeId': trade.id,
+      });
 
       for (var i = 0; i < trade.items.length; i++) {
         transaction.update(slotRefs[i], {

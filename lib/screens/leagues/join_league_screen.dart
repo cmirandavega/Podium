@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../models/app_user.dart';
 import '../../services/league_service.dart';
-import 'league_home_screen.dart';
 
 /// Join a league with the invite code the commissioner shared.
 class JoinLeagueScreen extends StatefulWidget {
@@ -31,17 +30,24 @@ class _JoinLeagueScreenState extends State<JoinLeagueScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     try {
-      final leagueId = await LeagueService().joinLeague(
+      final leagueName = await LeagueService().requestToJoin(
         inviteCode: _code.text,
         teamName: _teamName.text,
         username: widget.user.username,
       );
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => LeagueHomeScreen(leagueId: leagueId, user: widget.user),
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Request sent'),
+          content: Text(
+            'The commissioner of $leagueName will review your request. '
+            "You'll get a notification, and the league appears under My leagues once you're approved.",
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
         ),
       );
+      if (mounted) Navigator.of(context).pop();
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -88,7 +94,7 @@ class _JoinLeagueScreenState extends State<JoinLeagueScreen> {
                       width: 22,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('Join League'),
+                  : const Text('Request to Join'),
             ),
           ],
         ),

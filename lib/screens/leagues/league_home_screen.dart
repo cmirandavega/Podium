@@ -160,6 +160,7 @@ class _LeagueHomeScreenState extends State<LeagueHomeScreen> {
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
             children: [
               _LeagueHeader(league: league, isCommissioner: isCommissioner),
+              if (isCommissioner && league.phase == 'preseason') _JoinRequests(league: league),
               const SizedBox(height: 20),
               for (final tool in tools) ...[
                 _ToolTile(tool: tool),
@@ -315,6 +316,91 @@ class _LeagueHeader extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Commissioner's list of pending join requests, with approve and decline.
+class _JoinRequests extends StatefulWidget {
+  const _JoinRequests({required this.league});
+
+  final League league;
+
+  @override
+  State<_JoinRequests> createState() => _JoinRequestsState();
+}
+
+class _JoinRequestsState extends State<_JoinRequests> {
+  final _leagues = LeagueService();
+  late final Stream<List<JoinRequest>> _requests = _leagues.watchJoinRequests(widget.league.id);
+  final Set<String> _busy = {};
+
+  Future<void> _handle(JoinRequest request, bool approve) async {
+    setState(() => _busy.add(request.userId));
+    try {
+      if (approve) {
+        await _leagues.approveRequest(league: widget.league, request: request);
+      } else {
+        await _leagues.declineRequest(league: widget.league, request: request);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy.remove(request.userId));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<JoinRequest>>(
+      stream: _requests,
+      builder: (context, snapshot) {
+        final requests = snapshot.data ?? const <JoinRequest>[];
+        if (requests.isEmpty) return const SizedBox.shrink();
+        return Container(
+          margin: const EdgeInsets.only(top: 16),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: PodiumColors.field,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: PodiumColors.gold),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Join requests (${requests.length})',
+                style: const TextStyle(color: PodiumColors.gold, fontWeight: FontWeight.w700),
+              ),
+              for (final r in requests)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('@${r.username}'),
+                  subtitle: Text('Team: ${r.teamName}', style: const TextStyle(color: PodiumColors.muted)),
+                  trailing: _busy.contains(r.userId)
+                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Decline',
+                              icon: const Icon(Icons.close, color: PodiumColors.danger),
+                              onPressed: () => _handle(r, false),
+                            ),
+                            IconButton(
+                              tooltip: 'Approve',
+                              icon: const Icon(Icons.check, color: PodiumColors.gold),
+                              onPressed: widget.league.isFull ? null : () => _handle(r, true),
+                            ),
+                          ],
+                        ),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

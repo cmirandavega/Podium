@@ -71,8 +71,9 @@ class AuthService {
         }
         tx.set(nameRef, {'uid': uid});
         tx.set(_db.collection('users').doc(uid), {
+          // Email stays in Firebase Authentication only, so other users
+          // can't read it from the users collection.
           'username': name,
-          'email': email.trim(),
           'displayName': displayName.trim(),
           'role': 'user',
           'status': 'active',
