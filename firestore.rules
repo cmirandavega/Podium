@@ -68,12 +68,6 @@ service cloud.firestore {
         && (resource.data.commissionerId == request.auth.uid || isAdmin());
 
       match /members/{uid} {
-        allow read: if signedIn();
-        allow create: if request.auth.uid == uid
-                      && request.resource.data.userId == uid
-                      && request.resource.data.isMuted == false
-                      && request.resource.data.coins == 1000
-                      && uid in getAfter(/databases/$(database)/documents/leagues/$(leagueId)).data.memberIds;
         // Use Case 13. A member's own balance changes only by the stake of
         // the wager named in lastWagerId: down when they post or take it,
         // back up when they withdraw an open offer.
@@ -82,11 +76,17 @@ service cloud.firestore {
           let after = getAfter(path).data;
           let change = request.resource.data.coins - resource.data.coins;
           return after.leagueId == leagueId
-            && ((after.status == 'open' && after.creatorId == uid && !exists(path) && change == -after.amount)
-                || (after.status == 'matched' && after.opponentId == uid && get(path).data.status == 'open' && change == -after.amount)
+            && ((after.status == 'open' && after.creatorId == uid && !exists(path) && change + after.amount == 0)
+                || (after.status == 'matched' && after.opponentId == uid && get(path).data.status == 'open' && change + after.amount == 0)
                 || (after.status == 'cancelled' && after.creatorId == uid && get(path).data.status == 'open' && change == after.amount));
         }
 
+        allow read: if signedIn();
+        allow create: if request.auth.uid == uid
+                      && request.resource.data.userId == uid
+                      && request.resource.data.isMuted == false
+                      && request.resource.data.coins == 1000
+                      && uid in getAfter(/databases/$(database)/documents/leagues/$(leagueId)).data.memberIds;
         // Admins can change anything. The commissioner can mute or unmute
         // (Use Case 7) and pay out wagers when scoring a week.
         allow update: if isAdmin()
@@ -273,12 +273,6 @@ service cloud.firestore {
         return leagueId + '_' + request.auth.uid;
       }
 
-      allow read: if signedIn();
-      allow create: if signedIn()
-                    && slotId == request.resource.data.leagueId + '_' + request.resource.data.playerId
-                    && request.resource.data.teamId == ownTeamId(request.resource.data.leagueId)
-                    && slotLeague(request.resource.data.leagueId).lineupLocked == false
-                    && request.resource.data.sport in slotLeague(request.resource.data.leagueId).sports;
       // Accepting a trade (Use Case 8) moves each traded player to the other
       // team's bench. Allowed only for players listed in that trade, while
       // the trade goes from pending to completed in the same write.
@@ -296,6 +290,12 @@ service cloud.firestore {
           && request.resource.data.isStarter == false;
       }
 
+      allow read: if signedIn();
+      allow create: if signedIn()
+                    && slotId == request.resource.data.leagueId + '_' + request.resource.data.playerId
+                    && request.resource.data.teamId == ownTeamId(request.resource.data.leagueId)
+                    && slotLeague(request.resource.data.leagueId).lineupLocked == false
+                    && request.resource.data.sport in slotLeague(request.resource.data.leagueId).sports;
       allow update: if signedIn()
                     && slotLeague(resource.data.leagueId).lineupLocked == false
                     && ((resource.data.teamId == ownTeamId(resource.data.leagueId)
@@ -411,6 +411,12 @@ service cloud.firestore {
     // Use Case 6: users see only their own notifications and can only mark them read.
     // Admins can send notifications to any user (for example, account status changes).
     match /notifications/{notificationId} {
+      // Trade notices go only to the other team in that trade (Use Cases 6 and 8).
+      function tradeNotice() {
+        let trade = getAfter(/databases/$(database)/documents/trades/$(request.resource.data.relatedId)).data;
+        return (trade.proposerId == request.auth.uid && request.resource.data.userId == trade.receiverId)
+          || (trade.receiverId == request.auth.uid && request.resource.data.userId == trade.proposerId);
+      }
       allow read: if signedIn() && resource.data.userId == request.auth.uid;
       allow create: if signedIn()
                     && request.resource.data.isRead == false
@@ -418,12 +424,6 @@ service cloud.firestore {
                         || isAdmin()
                         || (request.resource.data.type in ['trade_offer', 'trade_update'] && tradeNotice()));
 
-      // Trade notices go only to the other team in that trade (Use Cases 6 and 8).
-      function tradeNotice() {
-        let trade = getAfter(/databases/$(database)/documents/trades/$(request.resource.data.relatedId)).data;
-        return (trade.proposerId == request.auth.uid && request.resource.data.userId == trade.receiverId)
-          || (trade.receiverId == request.auth.uid && request.resource.data.userId == trade.proposerId);
-      }
       allow update: if signedIn()
                     && resource.data.userId == request.auth.uid
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
