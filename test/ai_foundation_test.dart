@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:podium/models/ai_feature.dart';
 import 'package:podium/services/ai/ai_exceptions.dart';
 import 'package:podium/services/ai/ai_prompts.dart';
+import 'package:podium/services/ai/ai_service.dart';
 import 'package:podium/services/ai/ai_usage_service.dart';
 
 void main() {
@@ -57,6 +60,32 @@ void main() {
       final system = AiPrompts.system('You are the Podium AI Coach.');
       expect(system.startsWith('You are the Podium AI Coach.'), isTrue);
       expect(system.contains(AiPrompts.groundingRules), isTrue);
+    });
+  });
+
+  group('retry policy', () {
+    test('backoff grows exponentially, stays random, and caps at 8 seconds', () {
+      final random = Random(1);
+      for (var retry = 0; retry < 6; retry++) {
+        final cap = min(8000, 1000 * (1 << retry));
+        for (var i = 0; i < 50; i++) {
+          final ms = AiService.backoff(retry, random).inMilliseconds;
+          expect(ms, inInclusiveRange(0, cap));
+        }
+      }
+    });
+
+    test('errors are sorted into retry, switch model, or stop', () {
+      expect(AiService.classify(TimeoutException('slow')), AiFailure.switchModel);
+      expect(AiService.classify(Exception('Server error 500')), AiFailure.transient);
+      expect(AiService.classify(Exception('503 high demand, try again later')), AiFailure.transient);
+      expect(AiService.classify(Exception('429 RESOURCE_EXHAUSTED')), AiFailure.transient);
+      expect(
+        AiService.classify(Exception('models/gemini-2.5-flash is no longer available to new users')),
+        AiFailure.switchModel,
+      );
+      expect(AiService.classify(Exception('Firebase App Check token is invalid.')), AiFailure.fatal);
+      expect(AiService.classify(Exception('PERMISSION_DENIED')), AiFailure.fatal);
     });
   });
 
