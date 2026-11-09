@@ -231,6 +231,9 @@ class _TradeDetailScreenState extends State<TradeDetailScreen> {
           if (_analysis != null) ...[
             AnalysisCard(
               analysis: _analysis!,
+              side: isProposer
+                  ? TradeSide.proposer
+                  : (isReceiver ? TradeSide.receiver : TradeSide.neither),
               proposerName: _name(t.proposerTeamId),
               receiverName: _name(t.receiverTeamId),
             ),

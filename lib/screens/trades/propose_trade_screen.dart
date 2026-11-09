@@ -202,6 +202,7 @@ class _ProposeTradeScreenState extends State<ProposeTradeScreen> {
                           padding: const EdgeInsets.all(16),
                           child: AnalysisCard(
                             analysis: _analysis!,
+                            side: TradeSide.proposer,
                             proposerName: 'You',
                             receiverName: other?.teamName ?? 'Them',
                           ),
