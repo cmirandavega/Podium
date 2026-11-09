@@ -54,95 +54,20 @@ class _WagersScreenState extends State<WagersScreen> {
       _toast('No games to wager on this week.');
       return;
     }
-    Matchup game = open.first;
-    String pick = game.homeTeamId;
-    final amountController = TextEditingController(text: '50');
-    String? error;
-
-    final placed = await showDialog<bool>(
+    // The dialog owns its text field and returns the choice once it closes.
+    final choice = await showDialog<_WagerChoice>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialog) => AlertDialog(
-          title: Text('Wager on week ${league.currentWeek}'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                DropdownButtonFormField<String>(
-                  initialValue: game.id,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Game'),
-                  items: [
-                    for (final g in open)
-                      DropdownMenuItem(
-                        value: g.id,
-                        child: Text(
-                          '${teams[g.homeTeamId]?.teamName ?? 'Team'} vs ${teams[g.awayTeamId]?.teamName ?? 'Team'}',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                  ],
-                  onChanged: (v) => setDialog(() {
-                    game = open.firstWhere((g) => g.id == v);
-                    pick = game.homeTeamId;
-                  }),
-                ),
-                const SizedBox(height: 12),
-                const Text('Your pick to win'),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final id in [game.homeTeamId, game.awayTeamId!])
-                      ChoiceChip(
-                        label: Text(teams[id]?.teamName ?? 'Team'),
-                        selected: pick == id,
-                        onSelected: (_) => setDialog(() => pick = id),
-                      ),
-                  ],
-                ),
-                TextField(
-                  controller: amountController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'Coins (you have ${me.coins})',
-                    errorText: error,
-                  ),
-                  onChanged: (_) => setDialog(() => error = null),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Another member takes the other side for the same amount. The winner collects both stakes. '
-                  'Podium currency has no cash value and can\'t be bought or withdrawn.',
-                  style: TextStyle(color: PodiumColors.muted, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-            TextButton(
-              onPressed: () {
-                final amount = int.tryParse(amountController.text.trim()) ?? 0;
-                final problem = WagerService.validate(league: league, matchup: game, amount: amount, balance: me.coins);
-                if (problem != null) {
-                  setDialog(() => error = problem);
-                  return;
-                }
-                Navigator.pop(context, true);
-              },
-              child: const Text('Place wager'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => _NewWagerDialog(league: league, me: me, games: open, teams: teams),
     );
-    final amount = int.tryParse(amountController.text.trim()) ?? 0;
-    amountController.dispose();
-    if (placed != true) return;
+    if (choice == null) return;
     await _run(
-      () => _service.create(league: league, me: me, matchup: game, pickTeamId: pick, amount: amount),
+      () => _service.create(
+        league: league,
+        me: me,
+        matchup: choice.game,
+        pickTeamId: choice.pickTeamId,
+        amount: choice.amount,
+      ),
       'Wager posted. It goes live when someone takes the other side.',
     );
   }
@@ -299,6 +224,113 @@ class _WagersScreenState extends State<WagersScreen> {
           },
         );
       },
+    );
+  }
+}
+
+typedef _WagerChoice = ({Matchup game, String pickTeamId, int amount});
+
+/// The "New wager" form. As its own widget it disposes the amount field only
+/// after the dialog has fully closed.
+class _NewWagerDialog extends StatefulWidget {
+  const _NewWagerDialog({required this.league, required this.me, required this.games, required this.teams});
+
+  final League league;
+  final LeagueMember me;
+  final List<Matchup> games;
+  final Map<String, Team> teams;
+
+  @override
+  State<_NewWagerDialog> createState() => _NewWagerDialogState();
+}
+
+class _NewWagerDialogState extends State<_NewWagerDialog> {
+  final _amount = TextEditingController(text: '50');
+  late Matchup _game = widget.games.first;
+  late String _pick = _game.homeTeamId;
+  String? _error;
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    super.dispose();
+  }
+
+  String _name(String? teamId) => widget.teams[teamId]?.teamName ?? 'Team';
+
+  void _submit() {
+    final amount = int.tryParse(_amount.text.trim()) ?? 0;
+    final problem = WagerService.validate(
+      league: widget.league,
+      matchup: _game,
+      amount: amount,
+      balance: widget.me.coins,
+    );
+    if (problem != null) {
+      setState(() => _error = problem);
+      return;
+    }
+    Navigator.pop<_WagerChoice>(context, (game: _game, pickTeamId: _pick, amount: amount));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Wager on week ${widget.league.currentWeek}'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DropdownButtonFormField<String>(
+              initialValue: _game.id,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Game'),
+              items: [
+                for (final g in widget.games)
+                  DropdownMenuItem(
+                    value: g.id,
+                    child: Text('${_name(g.homeTeamId)} vs ${_name(g.awayTeamId)}', overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: (v) => setState(() {
+                _game = widget.games.firstWhere((g) => g.id == v);
+                _pick = _game.homeTeamId;
+              }),
+            ),
+            const SizedBox(height: 12),
+            const Text('Your pick to win'),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final id in [_game.homeTeamId, _game.awayTeamId!])
+                  ChoiceChip(
+                    label: Text(_name(id)),
+                    selected: _pick == id,
+                    onSelected: (_) => setState(() => _pick = id),
+                  ),
+              ],
+            ),
+            TextField(
+              controller: _amount,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(labelText: 'Coins (you have ${widget.me.coins})', errorText: _error),
+              onChanged: (_) => setState(() => _error = null),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Another member takes the other side for the same amount. The winner collects both stakes. '
+              'Podium currency has no cash value and can\'t be bought or withdrawn.',
+              style: TextStyle(color: PodiumColors.muted, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(onPressed: _submit, child: const Text('Place wager')),
+      ],
     );
   }
 }

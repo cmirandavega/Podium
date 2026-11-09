@@ -69,22 +69,10 @@ class _TeamScreenState extends State<TeamScreen> {
   }
 
   Future<void> _rename(Team team) async {
-    final controller = TextEditingController(text: team.teamName);
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rename team'),
-        content: TextField(controller: controller, maxLength: 30, autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+      builder: (_) => _RenameDialog(initial: team.teamName),
     );
-    controller.dispose();
     if (name == null || name.trim().isEmpty) return;
     await _run('rename', () => _teams.renameTeam(team.id, name));
   }
@@ -242,6 +230,38 @@ class _SectionHeader extends StatelessWidget {
           Text(detail, style: const TextStyle(color: PodiumColors.muted)),
         ],
       ),
+    );
+  }
+}
+
+/// Rename form that owns (and later disposes) its text field.
+class _RenameDialog extends StatefulWidget {
+  const _RenameDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  late final _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Rename team'),
+      content: TextField(controller: _controller, maxLength: 30, autofocus: true),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(context, _controller.text), child: const Text('Save')),
+      ],
     );
   }
 }
