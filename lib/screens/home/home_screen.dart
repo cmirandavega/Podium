@@ -1,6 +1,5 @@
 
 import 'package:flutter/material.dart';
-import '../leaderboard/leaderboard_screen.dart';
 
 import '../../models/app_user.dart';
 import '../../services/auth_service.dart';
@@ -14,6 +13,11 @@ import '../scores/scores_screen.dart';
 import '../../services/user_service.dart';
 import '../reports/report_user_screen.dart';
 import '/screens/mock_draft_screen.dart';
+import '../leagues/league_dashboard_screen.dart';
+import '../leagues/league_sports_screen.dart';
+import '../../services/league_feature_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../services/push_registration_service.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key, required this.user});
@@ -22,6 +26,8 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Registers this device once; errors are ignored when push is not configured.
+    PushRegistrationService.register(user.uid);
     final text = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(
@@ -82,29 +88,6 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(height: 32),
 
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.leaderboard_outlined),
-                label: const Text('View Leaderboard'),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const LeaderboardScreen(),
-                    ),
-                  );
-                },
-              ),
-            ),
-
-            const SizedBox(height: 32),
-
-            Text(
-              'My leagues',
-              style: text.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),const SizedBox(height: 12),
             OutlinedButton.icon(
               icon: const Icon(Icons.flag_outlined),
               label: const Text('Report a User'),
@@ -191,28 +174,27 @@ class HomeScreen extends StatelessWidget {
               style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
-            // Placeholder: the league use case replaces this with the user's leagues.
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: PodiumColors.field,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: PodiumColors.line),
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "You're not in any leagues yet.",
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    'Create a league or join one with an invite to start building your roster.',
-                    style: TextStyle(color: PodiumColors.muted),
-                  ),
-                ],
-              ),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.add), label: const Text('Create League'),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const LeagueSportsScreen())),
+            ),
+            const SizedBox(height: 12),
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: LeagueFeatureService.instance.leagues(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) return Text('Unable to load leagues: ${snapshot.error}');
+                if (!snapshot.hasData) return const LinearProgressIndicator();
+                final leagues = snapshot.data!.docs;
+                if (leagues.isEmpty) return const Text('No leagues yet. Create one to begin.');
+                return Column(children: leagues.map((league) => Card(child: ListTile(
+                  title: Text('${league.data()['name'] ?? league.id}'),
+                  subtitle: Text((league.data()['sports'] as List<dynamic>? ?? []).join(', ')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => LeagueDashboardScreen(leagueId: league.id))),
+                ))).toList());
+              },
             ),
           ],
         ),

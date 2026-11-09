@@ -36,29 +36,63 @@ service cloud.firestore {
 
     match /leagues/{leagueId} {
       allow read: if signedIn();
-      allow create: if signedIn()
-                    && request.resource.data.commissionerId == request.auth.uid;
-      allow update, delete: if signedIn()
-        && (resource.data.commissionerId == request.auth.uid || isAdmin());
+      allow create, update, delete: if false; // created and maintained by callable functions
 
       match /members/{uid} {
-        allow read: if signedIn();
-        allow create: if request.auth.uid == uid;
-        allow update: if isAdmin();
+        allow get: if signedIn() &&
+          (request.auth.uid == uid || memberOf(leagueId) || isAdmin());
+        allow list: if memberOf(leagueId) || isAdmin();
+        allow write: if false;
+      }
+      match /messages/{messageId} {
+        allow read: if memberOf(leagueId) || isAdmin();
+        allow write: if false;
       }
     }
 
     match /leagueSports/{id} {
       allow read: if signedIn();
-      allow create: if signedIn();
+      allow write: if false;
     }
 
     match /teams/{teamId} {
       allow read: if signedIn();
-      allow create: if signedIn()
-                    && request.resource.data.ownerId == request.auth.uid;
-      allow update: if signedIn()
-                    && resource.data.ownerId == request.auth.uid;
+      allow create, update, delete: if false; // team membership managed atomically
+    }
+
+    // UC2/UC3/UC7: server-authoritative writes via callable Cloud Functions.
+    // Existing client access to unrelated collections remains unchanged.
+    function activeUser() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status in ['active', 'warned'];
+    }
+    function memberOf(leagueId) {
+      return activeUser()
+        && exists(/databases/$(database)/documents/leagues/$(leagueId)/members/$(request.auth.uid));
+    }
+    match /rosterSlots/{slotId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /lineups/{lineupId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /trades/{tradeId} {
+      allow read: if signedIn();
+      allow write: if false;
+      match /items/{itemId} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
+    }
+    match /users/{uid}/fcmTokens/{token} {
+      allow read, delete: if false;
+      allow create, update: if activeUser() && request.auth.uid == uid
+        && token.size() > 10 && token.size() <= 4096
+        && request.resource.data.keys().hasOnly(['createdAt'])
+        && request.resource.data.createdAt == request.time;
     }
 
     match /leaderboard/{entryId} {
