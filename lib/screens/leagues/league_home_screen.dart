@@ -3,8 +3,11 @@ import 'package:flutter/services.dart';
 
 import '../../models/app_user.dart';
 import '../../models/league.dart';
+import '../../models/team.dart';
 import '../../services/league_service.dart';
 import '../../theme.dart';
+import '../team/league_teams_screen.dart';
+import '../team/team_screen.dart';
 import 'edit_sports_screen.dart';
 
 /// One league's hub: settings, invite code, members, and links to each
@@ -25,7 +28,24 @@ class _LeagueHomeScreenState extends State<LeagueHomeScreen> {
   late final Stream<List<LeagueMember>> _membersStream = _leagues.watchMembers(widget.leagueId);
 
   /// Links to league features. Each feature adds its entry here.
-  List<_LeagueTool> _tools(League league) => [];
+  List<_LeagueTool> _tools(League league) => [
+        _LeagueTool(
+          icon: Icons.groups_2_outlined,
+          title: 'My Team',
+          subtitle: 'Roster, starters, and bench',
+          builder: (_) => TeamScreen(
+            league: league,
+            teamId: Team.idFor(league.id, widget.user.uid),
+            viewerId: widget.user.uid,
+          ),
+        ),
+        _LeagueTool(
+          icon: Icons.shield_outlined,
+          title: 'Teams',
+          subtitle: 'See every roster in the league',
+          builder: (_) => LeagueTeamsScreen(league: league, viewerId: widget.user.uid),
+        ),
+      ];
 
   @override
   Widget build(BuildContext context) {

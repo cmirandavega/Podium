@@ -101,6 +101,33 @@ service cloud.firestore {
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamName']);
     }
 
+    // Use Case 3. The doc ID {leagueId}_{playerId} means a player is on at
+    // most one roster per league. Owners change only their own team, only
+    // with players from the league's sports, and not while lineups are locked.
+    match /rosterSlots/{slotId} {
+      function slotLeague(leagueId) {
+        return get(/databases/$(database)/documents/leagues/$(leagueId)).data;
+      }
+
+      function ownTeamId(leagueId) {
+        return leagueId + '_' + request.auth.uid;
+      }
+
+      allow read: if signedIn();
+      allow create: if signedIn()
+                    && slotId == request.resource.data.leagueId + '_' + request.resource.data.playerId
+                    && request.resource.data.teamId == ownTeamId(request.resource.data.leagueId)
+                    && slotLeague(request.resource.data.leagueId).lineupLocked == false
+                    && request.resource.data.sport in slotLeague(request.resource.data.leagueId).sports;
+      allow update: if signedIn()
+                    && resource.data.teamId == ownTeamId(resource.data.leagueId)
+                    && slotLeague(resource.data.leagueId).lineupLocked == false
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isStarter']);
+      allow delete: if signedIn()
+                    && resource.data.teamId == ownTeamId(resource.data.leagueId)
+                    && slotLeague(resource.data.leagueId).lineupLocked == false;
+    }
+
     match /leaderboard/{entryId} {
       allow read: if signedIn();
       allow write: if isAdmin();
