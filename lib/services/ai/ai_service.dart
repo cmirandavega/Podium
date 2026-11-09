@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_ai/firebase_ai.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../models/ai_feature.dart';
 import '../../models/ai_message.dart';
@@ -118,6 +119,11 @@ class AiService {
     } on TimeoutException catch (error) {
       throw AiUnavailableException('The AI service took too long to respond.', error);
     } on FirebaseAIException catch (error) {
+      debugPrint('Gemini request failed: $error');
+      throw AiUnavailableException('The AI service is unavailable right now.', error);
+    } on Exception catch (error) {
+      // Anything else (network, Firebase setup) is shown with its real message.
+      debugPrint('Gemini request failed: $error');
       throw AiUnavailableException('The AI service is unavailable right now.', error);
     }
   }

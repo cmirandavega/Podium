@@ -79,8 +79,11 @@ class _CoachScreenState extends State<CoachScreen> {
 
   String _describe(Object error) {
     if (error is AiLimitReachedException) return error.toString();
-    if (error is AiUnavailableException || error is AiBadResponseException) {
-      return "The Coach didn't answer. Your question is saved; tap Retry.";
+    if (error is AiUnavailableException) {
+      return "The Coach didn't answer (${error.cause ?? error.message}). Your question is saved; tap Retry.";
+    }
+    if (error is AiBadResponseException) {
+      return "The Coach didn't answer (${error.message}). Your question is saved; tap Retry.";
     }
     return '$error';
   }
