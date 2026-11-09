@@ -1,6 +1,7 @@
 
 import 'package:flutter/material.dart';
 import '../leaderboard/leaderboard_screen.dart';
+import '../leagues/my_leagues_section.dart';
 
 import '../../models/app_user.dart';
 import '../../services/auth_service.dart';
@@ -98,13 +99,8 @@ class HomeScreen extends StatelessWidget {
             ),
 
             const SizedBox(height: 32),
-
-            Text(
-              'My leagues',
-              style: text.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),const SizedBox(height: 12),
+            MyLeaguesSection(user: user),
+            const SizedBox(height: 32),
             OutlinedButton.icon(
               icon: const Icon(Icons.flag_outlined),
               label: const Text('Report a User'),
@@ -183,36 +179,6 @@ class HomeScreen extends StatelessWidget {
                   ),
                 );
               },
-            ),
-            const SizedBox(height: 24),
-
-            Text(
-              'My leagues',
-              style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            // Placeholder: the league use case replaces this with the user's leagues.
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: PodiumColors.field,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: PodiumColors.line),
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "You're not in any leagues yet.",
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    'Create a league or join one with an invite to start building your roster.',
-                    style: TextStyle(color: PodiumColors.muted),
-                  ),
-                ],
-              ),
             ),
           ],
         ),

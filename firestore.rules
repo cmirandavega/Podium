@@ -34,31 +34,71 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    function isCommissionerOf(leagueId) {
+      return signedIn() &&
+        get(/databases/$(database)/documents/leagues/$(leagueId)).data.commissionerId == request.auth.uid;
+    }
+
+    function isMemberOf(leagueId) {
+      return signedIn() &&
+        request.auth.uid in get(/databases/$(database)/documents/leagues/$(leagueId)).data.memberIds;
+    }
+
+    // Use Case 2. Joining only adds the caller to memberIds, before the
+    // season starts and while there's room. Commissioners and admins can
+    // change league settings.
     match /leagues/{leagueId} {
       allow read: if signedIn();
       allow create: if signedIn()
-                    && request.resource.data.commissionerId == request.auth.uid;
-      allow update, delete: if signedIn()
+                    && request.resource.data.commissionerId == request.auth.uid
+                    && request.resource.data.memberIds == [request.auth.uid]
+                    && request.resource.data.format in ['single-sport', 'multi-sport']
+                    && request.resource.data.sports.size() > 0;
+      allow update: if signedIn() && (
+          resource.data.commissionerId == request.auth.uid
+          || isAdmin()
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds'])
+              && resource.data.phase == 'preseason'
+              && !(request.auth.uid in resource.data.memberIds)
+              && request.resource.data.memberIds.hasAll(resource.data.memberIds)
+              && request.auth.uid in request.resource.data.memberIds
+              && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
+              && request.resource.data.memberIds.size() <= resource.data.maxTeams));
+      allow delete: if signedIn()
         && (resource.data.commissionerId == request.auth.uid || isAdmin());
 
       match /members/{uid} {
         allow read: if signedIn();
-        allow create: if request.auth.uid == uid;
+        allow create: if request.auth.uid == uid
+                      && request.resource.data.userId == uid
+                      && request.resource.data.isMuted == false
+                      && request.resource.data.coins == 1000
+                      && uid in getAfter(/databases/$(database)/documents/leagues/$(leagueId)).data.memberIds;
         allow update: if isAdmin();
       }
     }
 
+    // A leagueSports row can only point at the league it's named after.
     match /leagueSports/{id} {
       allow read: if signedIn();
-      allow create: if signedIn();
+      allow create: if signedIn()
+                    && id == request.resource.data.leagueId + '_' + request.resource.data.sportName
+                    && getAfter(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.commissionerId == request.auth.uid;
+      allow delete: if isCommissionerOf(resource.data.leagueId);
     }
 
+    // Use Case 3. One team per user per league: the doc ID is
+    // {leagueId}_{ownerId}, and the owner must be a league member (checked
+    // after the batch that creates the membership).
     match /teams/{teamId} {
       allow read: if signedIn();
       allow create: if signedIn()
-                    && request.resource.data.ownerId == request.auth.uid;
+                    && request.resource.data.ownerId == request.auth.uid
+                    && teamId == request.resource.data.leagueId + '_' + request.auth.uid
+                    && request.auth.uid in getAfter(/databases/$(database)/documents/leagues/$(request.resource.data.leagueId)).data.memberIds;
       allow update: if signedIn()
-                    && resource.data.ownerId == request.auth.uid;
+                    && resource.data.ownerId == request.auth.uid
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['teamName']);
     }
 
     match /leaderboard/{entryId} {
