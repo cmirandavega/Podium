@@ -7,6 +7,7 @@ import '../../models/team.dart';
 import '../../services/league_service.dart';
 import '../../theme.dart';
 import '../chat/league_chat_screen.dart';
+import '../coach/coach_screen.dart';
 import '../team/league_teams_screen.dart';
 import '../team/team_screen.dart';
 import 'edit_sports_screen.dart';
@@ -38,6 +39,13 @@ class _LeagueHomeScreenState extends State<LeagueHomeScreen> {
             league: league,
             teamId: Team.idFor(league.id, widget.user.uid),
             viewerId: widget.user.uid,
+            extraActions: [
+              ActionChip(
+                avatar: const Icon(Icons.psychology_outlined, size: 18),
+                label: const Text('Ask the AI Coach'),
+                onPressed: () => _openCoach(league),
+              ),
+            ],
           ),
         ),
         _LeagueTool(
@@ -52,7 +60,19 @@ class _LeagueHomeScreenState extends State<LeagueHomeScreen> {
           subtitle: 'Talk trades and trash with your league',
           builder: (_) => LeagueChatScreen(league: league, user: widget.user),
         ),
+        _LeagueTool(
+          icon: Icons.psychology_outlined,
+          title: 'AI Coach',
+          subtitle: 'Lineup advice from your roster and stats',
+          builder: (_) => CoachScreen(leagueId: league.id, userId: widget.user.uid),
+        ),
       ];
+
+  void _openCoach(League league) => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => CoachScreen(leagueId: league.id, userId: widget.user.uid),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {

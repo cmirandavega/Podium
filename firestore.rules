@@ -273,6 +273,35 @@ service cloud.firestore {
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
     }
 
+    // Use Case 12. Each team's Coach conversation is private to its owner.
+    // The doc ID is the team ID, which starts with the league ID and ends
+    // with the owner's uid.
+    match /coachConversations/{conversationId} {
+      // Checked on the ID so the owner can read before the doc exists.
+      function ownsConversation() {
+        return signedIn() && conversationId.matches('.*_' + request.auth.uid + '$');
+      }
+
+      allow read: if ownsConversation();
+      allow create, update: if signedIn()
+                            && request.resource.data.userId == request.auth.uid
+                            && conversationId == request.resource.data.teamId
+                            && request.resource.data.teamId.matches('.*_' + request.auth.uid + '$');
+
+      match /messages/{messageId} {
+        allow read: if ownsConversation();
+        allow create: if signedIn()
+                      && ownsConversation()
+                      && request.resource.data.role in ['user', 'assistant']
+                      && request.resource.data.content is string
+                      && request.resource.data.content.size() <= 4000;
+        allow update: if signedIn()
+                      && ownsConversation()
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['suggestionStatus'])
+                      && request.resource.data.suggestionStatus in ['applied', 'dismissed'];
+      }
+    }
+
     // Use Cases 4 and 12: daily AI request limits. Doc ID is
     // {userId}_{usageDate}_{feature}. The count can only go up by one at a
     // time and never past the feature's limit (keep these numbers in sync
