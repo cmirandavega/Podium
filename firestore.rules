@@ -173,5 +173,40 @@ service cloud.firestore {
                     && resource.data.userId == request.auth.uid
                     && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
     }
+
+    // Use Cases 4 and 12: daily AI request limits. Doc ID is
+    // {userId}_{usageDate}_{feature}. The count can only go up by one at a
+    // time and never past the feature's limit (keep these numbers in sync
+    // with lib/models/ai_feature.dart).
+    match /aiUsage/{usageId} {
+      function aiLimit(feature) {
+        return feature == 'trade_analyzer' ? 10 : 30;
+      }
+
+      function validUsage(d) {
+        return d.keys().hasOnly(['userId', 'usageDate', 'feature', 'requestCount'])
+          && d.userId == request.auth.uid
+          && d.feature in ['trade_analyzer', 'assistant_coach']
+          && d.usageDate is string
+          && d.usageDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && usageId == d.userId + '_' + d.usageDate + '_' + d.feature
+          && d.requestCount is int
+          && d.requestCount <= aiLimit(d.feature);
+      }
+
+      // Matching on the ID lets a user read their own counter even before
+      // it exists (the first request of the day).
+      allow read: if signedIn()
+                  && (usageId.matches('^' + request.auth.uid + '_.*') || isAdmin());
+      allow create: if signedIn()
+                    && validUsage(request.resource.data)
+                    && request.resource.data.requestCount == 1;
+      allow update: if signedIn()
+                    && resource.data.userId == request.auth.uid
+                    && validUsage(request.resource.data)
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['requestCount'])
+                    && request.resource.data.requestCount == resource.data.requestCount + 1;
+      allow delete: if false;
+    }
   }
 }
