@@ -5,6 +5,8 @@ import '../../models/app_user.dart';
 import '../../models/league.dart';
 import '../../models/team.dart';
 import '../../services/league_service.dart';
+import '../../services/matchup_service.dart';
+import '../../services/wager_service.dart';
 import '../../theme.dart';
 import '../chat/league_chat_screen.dart';
 import '../coach/coach_screen.dart';
@@ -13,6 +15,7 @@ import '../matchups/standings_screen.dart';
 import '../matchups/weekly_analysis_screen.dart';
 import '../team/league_teams_screen.dart';
 import '../trades/trades_screen.dart';
+import '../wagers/wagers_screen.dart';
 import '../team/team_screen.dart';
 import 'edit_sports_screen.dart';
 
@@ -64,7 +67,12 @@ class _LeagueHomeScreenState extends State<LeagueHomeScreen> {
           subtitle: league.phase == 'preseason'
               ? 'Schedule starts when the season does'
               : 'Week ${league.currentWeek} head-to-head games',
-          builder: (_) => MatchupsScreen(leagueId: league.id, userId: widget.user.uid),
+          builder: (_) => MatchupsScreen(
+            leagueId: league.id,
+            userId: widget.user.uid,
+            // Scoring a week also settles that week's wagers in the same batch.
+            matchups: MatchupService(onWeekScored: WagerService().settleInBatch),
+          ),
         ),
         _LeagueTool(
           icon: Icons.format_list_numbered,
@@ -86,6 +94,12 @@ class _LeagueHomeScreenState extends State<LeagueHomeScreen> {
           title: 'Trades',
           subtitle: 'Offers, counters, and the AI Trade Analyzer',
           builder: (_) => TradesScreen(leagueId: league.id, userId: widget.user.uid),
+        ),
+        _LeagueTool(
+          icon: Icons.toll_outlined,
+          title: 'Prediction Wagers',
+          subtitle: 'Bet Podium coins on matchups (no cash value)',
+          builder: (_) => WagersScreen(leagueId: league.id, userId: widget.user.uid),
         ),
         _LeagueTool(
           icon: Icons.forum_outlined,

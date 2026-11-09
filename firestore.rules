@@ -74,12 +74,32 @@ service cloud.firestore {
                       && request.resource.data.isMuted == false
                       && request.resource.data.coins == 1000
                       && uid in getAfter(/databases/$(database)/documents/leagues/$(leagueId)).data.memberIds;
-        // Admins can change anything; the commissioner can mute or unmute
-        // (Use Case 7).
+        // Use Case 13. A member's own balance changes only by the stake of
+        // the wager named in lastWagerId: down when they post or take it,
+        // back up when they withdraw an open offer.
+        function wagerEscrow() {
+          let path = /databases/$(database)/documents/wagers/$(request.resource.data.lastWagerId);
+          let after = getAfter(path).data;
+          let change = request.resource.data.coins - resource.data.coins;
+          return after.leagueId == leagueId
+            && ((after.status == 'open' && after.creatorId == uid && !exists(path) && change == -after.amount)
+                || (after.status == 'matched' && after.opponentId == uid && get(path).data.status == 'open' && change == -after.amount)
+                || (after.status == 'cancelled' && after.creatorId == uid && get(path).data.status == 'open' && change == after.amount));
+        }
+
+        // Admins can change anything. The commissioner can mute or unmute
+        // (Use Case 7) and pay out wagers when scoring a week.
         allow update: if isAdmin()
                       || (resource.data.userId != request.auth.uid
                           && get(/databases/$(database)/documents/leagues/$(leagueId)).data.commissionerId == request.auth.uid
-                          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isMuted']));
+                          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isMuted']))
+                      || (get(/databases/$(database)/documents/leagues/$(leagueId)).data.commissionerId == request.auth.uid
+                          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['coins'])
+                          && request.resource.data.coins > resource.data.coins)
+                      || (request.auth.uid == uid
+                          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['coins', 'lastWagerId'])
+                          && request.resource.data.coins >= 0
+                          && wagerEscrow());
       }
 
       // Use Case 7. Members who aren't muted can post as themselves.
@@ -168,6 +188,53 @@ service cloud.firestore {
                            getAfter(/databases/$(database)/documents/trades/$(tradeId)).data.receiverTeamId]
                       && get(/databases/$(database)/documents/rosterSlots/$(getAfter(/databases/$(database)/documents/trades/$(tradeId)).data.leagueId + '_' + playerId)).data.teamId == request.resource.data.fromTeamId;
       }
+    }
+
+    // Use Case 13. Members post wagers on this week's games before lineups
+    // lock; another member can take the open side; the commissioner settles
+    // them when scoring the week.
+    match /wagers/{wagerId} {
+      function wagerLeague(leagueId) {
+        return get(/databases/$(database)/documents/leagues/$(leagueId)).data;
+      }
+
+      function wagerGame(matchupId) {
+        return get(/databases/$(database)/documents/matchups/$(matchupId)).data;
+      }
+
+      allow read: if signedIn();
+      allow create: if signedIn()
+                    && request.resource.data.creatorId == request.auth.uid
+                    && request.resource.data.status == 'open'
+                    && request.resource.data.amount is int
+                    && request.resource.data.amount >= 10
+                    && request.auth.uid in wagerLeague(request.resource.data.leagueId).memberIds
+                    && wagerLeague(request.resource.data.leagueId).lineupLocked == false
+                    && wagerGame(request.resource.data.matchupId).leagueId == request.resource.data.leagueId
+                    && wagerGame(request.resource.data.matchupId).week == wagerLeague(request.resource.data.leagueId).currentWeek
+                    && wagerGame(request.resource.data.matchupId).status == 'scheduled'
+                    && request.resource.data.pickTeamId in [
+                         wagerGame(request.resource.data.matchupId).homeTeamId,
+                         wagerGame(request.resource.data.matchupId).awayTeamId];
+      allow update: if signedIn() && (
+          // Take the other side of an open offer.
+          (resource.data.status == 'open'
+           && request.resource.data.status == 'matched'
+           && request.resource.data.opponentId == request.auth.uid
+           && resource.data.creatorId != request.auth.uid
+           && request.auth.uid in wagerLeague(resource.data.leagueId).memberIds
+           && wagerLeague(resource.data.leagueId).lineupLocked == false
+           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'opponentId', 'opponentName']))
+          // Withdraw your own open offer.
+          || (resource.data.status == 'open'
+              && request.resource.data.status == 'cancelled'
+              && resource.data.creatorId == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
+          // Commissioner settles when scoring the week.
+          || (resource.data.status in ['open', 'matched']
+              && request.resource.data.status in ['won', 'push', 'void']
+              && wagerLeague(resource.data.leagueId).commissionerId == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'winnerId', 'settledAt'])));
     }
 
     // Use Case 4. Saved analyses are private to the user who ran them.
