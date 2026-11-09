@@ -26,6 +26,7 @@ class League {
     required this.playoffTeams,
     required this.lineupLocked,
     required this.phase,
+    this.draftStatus = 'complete',
     this.championTeamId,
     this.createdAt,
   });
@@ -49,6 +50,11 @@ class League {
   final bool lineupLocked;
   final String phase; // "preseason", "regular", "playoffs", "complete"
   final String? championTeamId;
+
+  /// "not_started", "live", or "complete". Leagues from before the live
+  /// draft have no value and count as complete.
+  final String draftStatus;
+  bool get draftComplete => draftStatus == 'complete';
   final DateTime? createdAt;
 
   static const formats = ['single-sport', 'multi-sport'];
@@ -86,6 +92,7 @@ class League {
       lineupLocked: data['lineupLocked'] as bool? ?? false,
       phase: data['phase'] as String? ?? 'preseason',
       championTeamId: data['championTeamId'] as String?,
+      draftStatus: data['draftStatus'] as String? ?? 'complete',
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
     );
   }

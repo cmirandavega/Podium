@@ -10,6 +10,7 @@ import '../../services/wager_service.dart';
 import '../../theme.dart';
 import '../chat/league_chat_screen.dart';
 import '../coach/coach_screen.dart';
+import '../draft/draft_screen.dart';
 import '../matchups/matchups_screen.dart';
 import '../matchups/standings_screen.dart';
 import '../matchups/weekly_analysis_screen.dart';
@@ -38,6 +39,16 @@ class _LeagueHomeScreenState extends State<LeagueHomeScreen> {
 
   /// Links to league features. Each feature adds its entry here.
   List<_LeagueTool> _tools(League league) => [
+        _LeagueTool(
+          icon: Icons.format_list_numbered,
+          title: 'Draft',
+          subtitle: switch (league.draftStatus) {
+            'not_started' => 'Commissioner starts the snake draft',
+            'live' => 'Live now: join the draft room',
+            _ => 'Draft board and results',
+          },
+          builder: (_) => DraftScreen(leagueId: league.id, userId: widget.user.uid),
+        ),
         _LeagueTool(
           icon: Icons.groups_2_outlined,
           title: 'My Team',

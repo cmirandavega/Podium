@@ -152,6 +152,7 @@ class LeagueService {
       'playoffTeams': playoffTeams,
       'lineupLocked': false,
       'phase': 'preseason',
+      'draftStatus': 'not_started',
       'createdAt': FieldValue.serverTimestamp(),
     });
 

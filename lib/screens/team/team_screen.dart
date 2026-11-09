@@ -155,7 +155,7 @@ class _TeamScreenState extends State<TeamScreen> {
                 ),
             ],
           ),
-          floatingActionButton: _isOwner && !widget.league.lineupLocked
+          floatingActionButton: _isOwner && !widget.league.lineupLocked && widget.league.draftComplete
               ? FloatingActionButton.extended(
                   icon: const Icon(Icons.person_add_alt_1),
                   label: const Text('Add players'),

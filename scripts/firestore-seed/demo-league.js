@@ -1,17 +1,20 @@
 // Fills a league with demo opponents for presentations and testing.
 //
-// Creates bot accounts, adds them to the league, and drafts full rosters for
-// every team (bots and any real member whose roster isn't full) from the
-// league's season, best players first, snake order. Uses the Admin SDK, so it
-// bypasses security rules: run it only against your own project.
+// By default it only adds bot teams. Start the draft in the app as the
+// commissioner and the bots pick for themselves (keep the Draft screen open).
 //
-// Safe to re-run: with the league already full it adds no bots, tops up any roster that
-// isn't full, and refreshes every team's rosterCount.
+// With --fill-rosters it also drafts every roster instantly (best players
+// first, snake order) and marks the draft complete, skipping the live draft.
+// Re-running with --fill-rosters tops up rosters and refreshes rosterCount.
+//
+// Uses the Admin SDK, so it bypasses security rules: run it only against
+// your own project.
 //
 // Usage (from scripts/firestore-seed, with serviceAccountKey.json in place):
-//   node demo-league.js <INVITE_CODE> [botCount]
-// Example:
-//   node demo-league.js K7QX2M 3
+//   node demo-league.js <INVITE_CODE> [botCount] [--fill-rosters]
+// Examples:
+//   node demo-league.js K7QX2M                  add bots, then run the live draft
+//   node demo-league.js K7QX2M --fill-rosters   add bots and draft everyone now
 
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
@@ -23,7 +26,9 @@ const db = getFirestore();
 const BOT_NAMES = ['Gridiron Ghosts', 'Blitz Brigade', 'Red Zone Rebels', 'Fourth & Long', 'Hail Mary Club', 'Pick Six Posse', 'Two Minute Drill', 'End Zone Elite', 'Audible Kings', 'Sideline Sharks', 'Pocket Passers'];
 
 async function main() {
-  const [code, countArg] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const fillRosters = args.includes('--fill-rosters');
+  const [code, countArg] = args.filter((a) => !a.startsWith('--'));
   if (!code) throw new Error('Usage: node demo-league.js <INVITE_CODE> [botCount]');
 
   const match = await db.collection('leagues').where('inviteCode', '==', code.toUpperCase()).limit(1).get();
@@ -58,6 +63,11 @@ async function main() {
   }
   if (botIds.length) batch.update(leagueRef, { memberIds: FieldValue.arrayUnion(...botIds) });
   await batch.commit();
+
+  if (!fillRosters) {
+    console.log('Bots added. Start the draft in the app (League > Draft); bots pick while the commissioner has it open.');
+    return;
+  }
 
   // 2. Player pool: total points across the season's loaded weeks.
   const stats = await db.collection('playerStats').get();
@@ -112,6 +122,11 @@ async function main() {
   for (const teamId of teams) countBatch.update(db.doc(`teams/${teamId}`), { rosterCount: counts[teamId] });
   await countBatch.commit();
   console.log('Updated roster counts.');
+
+  // 5. Rosters are full, so the draft is done.
+  await leagueRef.update({ draftStatus: 'complete' });
+  await db.doc(`drafts/${leagueId}`).set({ leagueId, status: 'complete', order: teams, rounds: league.rosterSize, pickNumber: teams.length * league.rosterSize, currentTeamId: null }, { merge: true });
+  console.log('Marked the draft complete.');
 }
 
 main().catch((error) => {

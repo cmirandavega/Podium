@@ -75,6 +75,7 @@ class MatchupService {
   Future<void> startSeason(League league) async {
     _requireCommissioner(league);
     if (league.phase != 'preseason') throw StateError('The season has already started.');
+    if (!league.draftComplete) throw StateError('Finish the draft before starting the season.');
     final teams = await _teams.getTeamsInLeague(league.id);
     if (teams.length < 2) throw StateError('A league needs at least two teams to start.');
 

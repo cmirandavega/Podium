@@ -81,11 +81,18 @@ service cloud.firestore {
                     && request.resource.data.phase == 'preseason'
                     && request.resource.data.currentWeek == 1
                     && request.resource.data.lineupLocked == false
+                    && request.resource.data.draftStatus == 'not_started'
                     && validSettings(request.resource.data);
       allow update: if (activeUser()
                         && resource.data.commissionerId == request.auth.uid
                         && validSettings(request.resource.data))
-                    || isAdmin();
+                    || isAdmin()
+                    // Whoever makes the last draft pick marks the draft complete.
+                    || (activeUser()
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['draftStatus'])
+                        && resource.data.draftStatus == 'live'
+                        && request.resource.data.draftStatus == 'complete'
+                        && getAfter(/databases/$(database)/documents/drafts/$(leagueId)).data.status == 'complete');
       allow delete: if signedIn()
         && (resource.data.commissionerId == request.auth.uid || isAdmin());
 
@@ -275,9 +282,63 @@ service cloud.firestore {
            && request.resource.data.teamName.size() > 0
            && request.resource.data.teamName.size() <= 30)
           || (activeUser() && resource.data.ownerId == request.auth.uid && rosterChange())
+          || (activeUser()
+              && isCommissionerOf(resource.data.leagueId)
+              && get(/databases/$(database)/documents/drafts/$(resource.data.leagueId)).data.status == 'live'
+              && rosterChange())
           || (activeUser() && tradeCount())
           || (isCommissionerOf(resource.data.leagueId)
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['wins', 'losses', 'ties', 'pointsFor'])));
+    }
+
+    // Use Case 3. The live snake draft. The commissioner starts it; each pick
+    // moves the clock to the next team in snake order, and the pick, the
+    // roster slot, and the clock change in one write.
+    match /drafts/{leagueId} {
+      function draftLeague() {
+        return get(/databases/$(database)/documents/leagues/$(leagueId)).data;
+      }
+
+      // Team on the clock for 0-based pick n: 1..N, then N..1.
+      function teamAt(d, n) {
+        let size = d.order.size();
+        let round = int(n / size);
+        let pos = n % size;
+        return d.order[round % 2 == 0 ? pos : size - 1 - pos];
+      }
+
+      allow read: if signedIn();
+      allow create: if activeUser()
+                    && draftLeague().commissionerId == request.auth.uid
+                    && draftLeague().draftStatus == 'not_started'
+                    && request.resource.data.status == 'live'
+                    && request.resource.data.pickNumber == 0
+                    && request.resource.data.order is list
+                    && request.resource.data.order.size() == draftLeague().memberIds.size()
+                    && request.resource.data.rounds == draftLeague().rosterSize
+                    && request.resource.data.currentTeamId == request.resource.data.order[0];
+      allow update: if activeUser()
+                    && resource.data.status == 'live'
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pickNumber', 'currentTeamId', 'status'])
+                    && request.resource.data.pickNumber == resource.data.pickNumber + 1
+                    && (resource.data.currentTeamId == leagueId + '_' + request.auth.uid
+                        || draftLeague().commissionerId == request.auth.uid)
+                    && existsAfter(/databases/$(database)/documents/drafts/$(leagueId)/picks/$(string(resource.data.pickNumber)))
+                    && ((request.resource.data.pickNumber < resource.data.order.size() * resource.data.rounds
+                         && request.resource.data.status == 'live'
+                         && request.resource.data.currentTeamId == teamAt(resource.data, request.resource.data.pickNumber))
+                        || (request.resource.data.pickNumber == resource.data.order.size() * resource.data.rounds
+                            && request.resource.data.status == 'complete'
+                            && request.resource.data.currentTeamId == null));
+
+      match /picks/{pickId} {
+        allow read: if signedIn();
+        allow create: if activeUser()
+                      && pickId == string(get(/databases/$(database)/documents/drafts/$(leagueId)).data.pickNumber)
+                      && request.resource.data.teamId == get(/databases/$(database)/documents/drafts/$(leagueId)).data.currentTeamId
+                      && getAfter(/databases/$(database)/documents/drafts/$(leagueId)).data.pickNumber
+                           == get(/databases/$(database)/documents/drafts/$(leagueId)).data.pickNumber + 1;
+      }
     }
 
     // Use Case 8. offeredIds and requestedIds list every player in the trade.
@@ -464,11 +525,29 @@ service cloud.firestore {
           && request.resource.data.isStarter == false;
       }
 
+      // A draft pick: the team must be on the clock, picked by its owner or
+      // by the commissioner's auto-pick, and the clock must move on.
+      function draftPick() {
+        let draftPath = /databases/$(database)/documents/drafts/$(request.resource.data.leagueId);
+        let d = get(draftPath).data;
+        return d.status == 'live'
+          && request.resource.data.teamId == d.currentTeamId
+          && (request.resource.data.teamId == ownTeamId(request.resource.data.leagueId)
+              || slotLeague(request.resource.data.leagueId).commissionerId == request.auth.uid)
+          && getAfter(draftPath).data.pickNumber == d.pickNumber + 1;
+      }
+
+      // Adding a free agent after the draft, to your own team.
+      function freeAgentAdd() {
+        return request.resource.data.teamId == ownTeamId(request.resource.data.leagueId)
+          && request.auth.uid in slotLeague(request.resource.data.leagueId).memberIds
+          && slotLeague(request.resource.data.leagueId).get('draftStatus', 'complete') == 'complete';
+      }
+
       allow read: if signedIn();
       allow create: if activeUser()
                     && slotId == request.resource.data.leagueId + '_' + request.resource.data.playerId
-                    && request.resource.data.teamId == ownTeamId(request.resource.data.leagueId)
-                    && request.auth.uid in slotLeague(request.resource.data.leagueId).memberIds
+                    && (freeAgentAdd() || draftPick())
                     && slotLeague(request.resource.data.leagueId).lineupLocked == false
                     && request.resource.data.sport in slotLeague(request.resource.data.leagueId).sports
                     && get(/databases/$(database)/documents/players/$(request.resource.data.playerId)).data.sport == request.resource.data.sport

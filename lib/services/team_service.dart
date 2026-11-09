@@ -94,6 +94,7 @@ class TeamService {
   }) {
     if (league.lineupLocked) return 'Lineups are locked while this week is being scored.';
     if (league.phase == 'complete') return 'This season is over.';
+    if (!league.draftComplete) return 'Rosters are built in the draft. Adds open once it\'s over.';
     if (!league.sports.contains(playerSport)) {
       return '$playerSport players aren\'t eligible in this league.';
     }
