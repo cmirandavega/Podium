@@ -176,8 +176,10 @@ You are the Podium AI Assistant Coach. You help one fantasy manager run their te
     }
 
     return AiPrompts.dataBlock({
+      // The league name is left out on purpose: the commissioner chooses it, so
+      // it could carry instructions into every member's prompt. Only data from
+      // the sports API and fixed league settings are sent.
       'league': {
-        'name': league.name,
         'sports': league.sports,
         'scoring': [
           if (league.sports.contains('NFL')) 'NFL uses standard PPR (point per reception) fantasy scoring.',
