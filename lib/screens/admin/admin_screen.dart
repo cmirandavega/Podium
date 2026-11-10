@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../models/app_user.dart';
+import '../../models/user_report.dart';
+import '../../services/report_service.dart';
 import '../../services/notification_service.dart';
 import '../../services/user_service.dart';
 import '../../theme.dart';
+import '../../widgets/podium_ui.dart';
 
 import '../reports/admin_reports_screen.dart';
 
@@ -22,6 +25,7 @@ class AdminScreen extends StatefulWidget {
 class _AdminScreenState extends State<AdminScreen> {
   final _users = UserService();
   late final Stream<List<AppUser>> _allUsers = _users.watchAllUsers();
+  late final Stream<List<UserReport>> _reports = ReportService().watchReports();
 
   Future<void> _setActive(AppUser user, bool active) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -94,10 +98,72 @@ class _AdminScreenState extends State<AdminScreen> {
               if (index == 0) {
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                  child: Text(
-                    '${users.length} accounts. Turn off Active to suspend an account; '
-                    'suspended players are signed out right away.',
-                    style: const TextStyle(color: PodiumColors.muted),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      StreamBuilder<List<UserReport>>(
+                        stream: _reports,
+                        builder: (context, reportSnap) {
+                          final pending = (reportSnap.data ?? const <UserReport>[])
+                              .where((r) => r.status == 'pending')
+                              .length;
+                          return PodiumCard(
+                            borderColor: pending > 0 ? PodiumColors.gold : PodiumColors.line,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const AdminReportsScreen()),
+                            ),
+                            child: Row(
+                              children: [
+                                TintedIcon(
+                                  icon: Icons.flag_outlined,
+                                  color: pending > 0 ? PodiumColors.dangerText : PodiumColors.silver,
+                                  background: pending > 0 ? PodiumColors.dangerTint : PodiumColors.silverTint,
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('User reports', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                                      Text(
+                                        pending == 0
+                                            ? 'Nothing waiting for review'
+                                            : '$pending waiting for review',
+                                        style: const TextStyle(fontSize: 12, color: PodiumColors.muted),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (pending > 0)
+                                  Container(
+                                    constraints: const BoxConstraints(minWidth: 28),
+                                    height: 28,
+                                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: PodiumColors.danger,
+                                      borderRadius: BorderRadius.circular(PodiumRadii.pill),
+                                    ),
+                                    child: Text(
+                                      '$pending',
+                                      style: PodiumText.score(size: 17, color: PodiumColors.navy),
+                                    ),
+                                  ),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.chevron_right, color: PodiumColors.muted),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '${users.length} accounts. Turn off Active to suspend an account; '
+                        'suspended players are signed out right away.',
+                        style: const TextStyle(color: PodiumColors.muted),
+                      ),
+                    ],
                   ),
                 );
               }

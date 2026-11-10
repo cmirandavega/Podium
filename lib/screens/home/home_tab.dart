@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../models/app_user.dart';
 import '../../models/league.dart';
+import '../../models/matchup.dart';
 import '../../models/team.dart';
 import '../../models/wager.dart';
 import '../../services/auth_service.dart';
+import '../../services/matchup_service.dart';
 import '../../services/season_engine.dart';
 import '../../services/team_service.dart';
 import '../../services/user_service.dart';
@@ -19,6 +21,7 @@ import '../leagues/create_league_screen.dart';
 import '../leagues/join_league_screen.dart';
 import '../leagues/league_home_screen.dart';
 import '../leagues/my_leagues_section.dart';
+import '../matchups/matchups_screen.dart';
 import '../mock_draft_screen.dart';
 import '../profile/profile_screen.dart';
 import '../reports/report_user_screen.dart';
@@ -136,6 +139,14 @@ class HomeTab extends StatelessWidget {
                     )
                   else
                     _PhaseCard(league: league, onOpen: () => _push(context, LeagueHomeScreen(leagueId: league.id, user: user))),
+                  if (league.isCommissioner(user.uid) && league.phase != 'complete') ...[
+                    const SizedBox(height: 14),
+                    _CommissionerCard(
+                      key: ValueKey('commish_${league.id}'),
+                      league: league,
+                      onOpenSchedule: () => _openSchedule(context, league),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   _quickActions(context, league),
                   const SizedBox(height: 14),
@@ -145,6 +156,15 @@ class HomeTab extends StatelessWidget {
                     userId: user.uid,
                     onTap: () => onGoTo(ShellTab.leaders),
                   ),
+                  if (league.phase == 'regular' || league.phase == 'playoffs') ...[
+                    const SizedBox(height: 22),
+                    _WeekGames(
+                      key: ValueKey('games_${league.id}'),
+                      league: league,
+                      userId: user.uid,
+                      onOpenSchedule: () => _openSchedule(context, league),
+                    ),
+                  ],
                   const SizedBox(height: 22),
                   SectionHeader(
                     'League',
@@ -168,6 +188,17 @@ class HomeTab extends StatelessWidget {
       ),
     );
   }
+
+  /// The full schedule with the commissioner panel. Scoring a week there
+  /// also settles its wagers, same as the league hub.
+  void _openSchedule(BuildContext context, League league) => _push(
+        context,
+        MatchupsScreen(
+          leagueId: league.id,
+          userId: user.uid,
+          matchups: MatchupService(onWeekScored: WagerService().settleInBatch),
+        ),
+      );
 
   Widget _quickActions(BuildContext context, League? league) {
     return Row(
@@ -610,6 +641,275 @@ class _OpenOffersState extends State<_OpenOffers> {
           },
         );
       },
+    );
+  }
+}
+
+/// The commissioner's next step for the week, right on Home:
+/// Start season -> Lock lineups -> Score week -> (next week) Lock lineups...
+class _CommissionerCard extends StatefulWidget {
+  const _CommissionerCard({super.key, required this.league, required this.onOpenSchedule});
+
+  final League league;
+  final VoidCallback onOpenSchedule;
+
+  @override
+  State<_CommissionerCard> createState() => _CommissionerCardState();
+}
+
+class _CommissionerCardState extends State<_CommissionerCard> {
+  // Scoring a week also settles that week's wagers in the same batch.
+  final _service = MatchupService(onWeekScored: WagerService().settleInBatch);
+  bool _busy = false;
+
+  Future<void> _run(Future<void> Function() action, String done) async {
+    setState(() => _busy = true);
+    try {
+      await action();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(done)));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$error')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<bool> _confirm(String title, String body, String action) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text(action)),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final league = widget.league;
+    final week = league.currentWeek;
+
+    final String step;
+    final String detail;
+    final IconData icon;
+    final String label;
+    final Future<void> Function() onPressed;
+    if (league.phase == 'preseason') {
+      step = 'PRESEASON';
+      detail = 'When everyone has drafted, start the season. This builds the schedule and opens week 1.';
+      icon = Icons.play_arrow_rounded;
+      label = 'Start season';
+      onPressed = () async {
+        if (!await _confirm('Start the season?', 'This builds the full schedule. Rosters stay editable until you lock week 1.', 'Start')) return;
+        await _run(() => _service.startSeason(league), 'Season started. Week 1 is set.');
+      };
+    } else if (!league.lineupLocked) {
+      step = 'WEEK $week · LINEUPS OPEN';
+      detail = 'Lock lineups when week $week\'s games begin. Locking also closes wagers and turns on live scores.';
+      icon = Icons.lock_outline_rounded;
+      label = 'Lock lineups for week $week';
+      onPressed = () => _run(() => _service.setLineupsLocked(league, true), 'Lineups locked for week $week.');
+    } else {
+      step = 'WEEK $week · LOCKED';
+      detail = 'Once the stats are in, score the week to post results, update standings, and settle wagers.';
+      icon = Icons.scoreboard_outlined;
+      label = 'Score week $week';
+      onPressed = () async {
+        if (!await _confirm(
+          'Score week $week?',
+          'This finalizes every week $week game, updates standings, and pays out wagers. It can\'t be undone.',
+          'Score week',
+        )) {
+          return;
+        }
+        await _run(() => _service.scoreCurrentWeek(league), 'Week $week is final.');
+      };
+    }
+
+    return PodiumCard(
+      borderColor: PodiumColors.gold,
+      radius: 22,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.workspace_premium_outlined, color: PodiumColors.gold, size: 18),
+              const SizedBox(width: 8),
+              Text('COMMISSIONER', style: PodiumText.overline.copyWith(color: PodiumColors.gold)),
+              const Spacer(),
+              Flexible(
+                child: Text(
+                  step,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: PodiumText.overline.copyWith(fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(detail, style: const TextStyle(fontSize: 13, color: PodiumColors.silver, height: 1.4)),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            icon: Icon(icon),
+            label: Text(label),
+            onPressed: _busy ? null : onPressed,
+          ),
+          if (_busy) ...[
+            const SizedBox(height: 10),
+            const LinearProgressIndicator(),
+          ],
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              TextButton(onPressed: widget.onOpenSchedule, child: const Text('Schedule & all games')),
+              const Spacer(),
+              if (league.lineupLocked && league.phase != 'preseason')
+                TextButton(
+                  style: TextButton.styleFrom(foregroundColor: PodiumColors.silver),
+                  onPressed: _busy
+                      ? null
+                      : () => _run(() => _service.setLineupsLocked(league, false), 'Lineups unlocked.'),
+                  child: const Text('Unlock'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Every game in the league this week, scoreboard rows.
+class _WeekGames extends StatefulWidget {
+  const _WeekGames({super.key, required this.league, required this.userId, required this.onOpenSchedule});
+
+  final League league;
+  final String userId;
+  final VoidCallback onOpenSchedule;
+
+  @override
+  State<_WeekGames> createState() => _WeekGamesState();
+}
+
+class _WeekGamesState extends State<_WeekGames> {
+  late final Stream<List<Matchup>> _games = MatchupService().watchMatchups(widget.league.id);
+  late final Stream<List<Team>> _teams = TeamService().watchTeamsInLeague(widget.league.id);
+
+  @override
+  Widget build(BuildContext context) {
+    final league = widget.league;
+    final myTeamId = Team.idFor(league.id, widget.userId);
+    return StreamBuilder<List<Team>>(
+      stream: _teams,
+      builder: (context, teamSnap) {
+        final teams = {for (final t in teamSnap.data ?? const <Team>[]) t.id: t};
+        return StreamBuilder<List<Matchup>>(
+          stream: _games,
+          builder: (context, snap) {
+            final games = (snap.data ?? const <Matchup>[]).where((g) => g.week == league.currentWeek).toList()
+              // Your game first.
+              ..sort((a, b) => (b.involves(myTeamId) ? 1 : 0) - (a.involves(myTeamId) ? 1 : 0));
+            if (games.isEmpty) return const SizedBox.shrink();
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SectionHeader(
+                  'Week ${league.currentWeek} games',
+                  actionLabel: 'Schedule',
+                  onAction: widget.onOpenSchedule,
+                ),
+                const SizedBox(height: 8),
+                PodiumCard(
+                  padding: EdgeInsets.zero,
+                  radius: PodiumRadii.tile + 2,
+                  onTap: widget.onOpenSchedule,
+                  child: Column(
+                    children: [
+                      for (var i = 0; i < games.length; i++) ...[
+                        if (i > 0) const Divider(),
+                        _GameRow(game: games[i], teams: teams, myTeamId: myTeamId, locked: league.lineupLocked),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _GameRow extends StatelessWidget {
+  const _GameRow({required this.game, required this.teams, required this.myTeamId, required this.locked});
+
+  final Matchup game;
+  final Map<String, Team> teams;
+  final String myTeamId;
+  final bool locked;
+
+  @override
+  Widget build(BuildContext context) {
+    final g = game;
+    String name(String? id) => id == null ? 'Bye' : (teams[id]?.teamName ?? 'Team');
+    TextStyle nameStyle(String? id) {
+      final won = g.isFinal && g.winnerTeamId != null && g.winnerTeamId == id;
+      final lost = g.isFinal && g.winnerTeamId != null && g.winnerTeamId != id;
+      return TextStyle(
+        fontSize: 13,
+        fontWeight: id == myTeamId || won ? FontWeight.w700 : FontWeight.w500,
+        color: id == myTeamId ? PodiumColors.gold : (lost ? PodiumColors.muted : PodiumColors.chalk),
+      );
+    }
+
+    final Widget middle;
+    if (g.isBye) {
+      middle = const StatusPill(label: 'BYE');
+    } else if (g.isFinal) {
+      middle = Text(
+        '${formatPoints(g.homeScore)} – ${formatPoints(g.awayScore)}',
+        style: PodiumText.score(size: 18, weight: FontWeight.w600),
+      );
+    } else if (locked) {
+      middle = const StatusPill.live();
+    } else {
+      middle = Text('VS', style: PodiumText.score(size: 14, color: PodiumColors.muted, weight: FontWeight.w600));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              name(g.homeTeamId),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: nameStyle(g.homeTeamId),
+            ),
+          ),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: middle),
+          Expanded(
+            child: Text(
+              name(g.awayTeamId),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: nameStyle(g.awayTeamId),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
