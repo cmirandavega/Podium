@@ -762,5 +762,21 @@ service cloud.firestore {
                     && request.resource.data.requestCount == resource.data.requestCount + 1;
       allow delete: if false;
     }
+     // League chat (written by Cloud Functions, read by league members)
+    match /leagues/{leagueId}/messages/{messageId} {
+      allow read: if signedIn()
+        && (request.auth.uid in get(/databases/$(database)/documents/leagues/$(leagueId)).data.memberIds
+            || isAdmin());
+      allow write: if false;
+    }
+
+    // Push notification tokens
+    match /users/{uid}/fcmTokens/{token} {
+      allow read, delete: if false;
+      allow create, update: if activeUser() && request.auth.uid == uid
+        && token.size() > 10 && token.size() <= 4096
+        && request.resource.data.keys().hasOnly(['createdAt'])
+        && request.resource.data.createdAt == request.time;
+    }
   }
 }
