@@ -7,6 +7,7 @@ import '../../services/league_service.dart';
 import '../../services/matchup_service.dart';
 import '../../services/team_service.dart';
 import '../../theme.dart';
+import '../../widgets/podium_ui.dart';
 import 'standings_screen.dart';
 
 /// Use Case 15: the weekly schedule and results. The commissioner starts
@@ -96,19 +97,21 @@ class _MatchupsScreenState extends State<MatchupsScreen> {
         buttons = const [];
     }
     if (buttons.isEmpty) return const SizedBox.shrink();
-    return Container(
+    return PodiumCard(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: PodiumColors.field,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: PodiumColors.gold),
-      ),
+      padding: const EdgeInsets.all(16),
+      borderColor: PodiumColors.gold,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Commissioner', style: TextStyle(color: PodiumColors.gold, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.workspace_premium_outlined, color: PodiumColors.gold, size: 18),
+              const SizedBox(width: 8),
+              Text('COMMISSIONER', style: PodiumText.overline.copyWith(color: PodiumColors.gold)),
+            ],
+          ),
+          const SizedBox(height: 12),
           ...buttons,
           if (_busy) const Padding(padding: EdgeInsets.only(top: 8), child: LinearProgressIndicator()),
         ],
@@ -117,48 +120,91 @@ class _MatchupsScreenState extends State<MatchupsScreen> {
   }
 
   Widget _game(Matchup m, Map<String, Team> teams) {
+    final myTeamId = Team.idFor(widget.leagueId, widget.userId);
+    final mine = m.involves(myTeamId);
     String name(String? id) => id == null ? 'Bye' : (teams[id]?.teamName ?? 'Team');
-    TextStyle style(String? id) => TextStyle(
-          fontWeight: m.isFinal && m.winnerTeamId == id ? FontWeight.w700 : FontWeight.w400,
-          color: m.involves(Team.idFor(widget.leagueId, widget.userId)) && id == Team.idFor(widget.leagueId, widget.userId)
-              ? PodiumColors.gold
-              : PodiumColors.chalk,
-        );
-    return Card(
-      color: PodiumColors.field,
+
+    Widget side(String? id, double score) {
+      final isMe = id == myTeamId;
+      final won = m.isFinal && m.winnerTeamId != null && m.winnerTeamId == id;
+      final lost = m.isFinal && m.winnerTeamId != null && m.winnerTeamId != id;
+      final showScore = m.isFinal && !(m.isBye && id == m.awayTeamId);
+      return Row(
+        children: [
+          InitialsAvatar(
+            name: name(id),
+            size: 34,
+            ring: isMe ? PodiumColors.gold : PodiumColors.line,
+            ringWidth: isMe ? 2 : 1.5,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name(id),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: won || isMe ? FontWeight.w700 : FontWeight.w500,
+                    color: lost ? PodiumColors.muted : PodiumColors.chalk,
+                  ),
+                ),
+                if (id != null && teams[id] != null)
+                  Text(
+                    isMe ? 'You · ${teams[id]!.record}' : teams[id]!.record,
+                    style: PodiumText.caption,
+                  ),
+              ],
+            ),
+          ),
+          Text(
+            showScore ? formatPoints(score) : '–',
+            style: PodiumText.score(
+              size: 28,
+              weight: won ? FontWeight.w700 : FontWeight.w600,
+              color: won ? (isMe ? PodiumColors.gold : PodiumColors.chalk) : PodiumColors.muted,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final Widget pill;
+    if (m.isFinal) {
+      pill = StatusPill(label: m.isBye ? 'BYE' : (m.winnerTeamId == null ? 'FINAL · TIE' : 'FINAL'));
+    } else {
+      pill = const StatusPill(label: 'SCHEDULED');
+    }
+    final total = m.homeScore + m.awayScore;
+
+    return PodiumCard(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (m.isPlayoff)
-              Text(
-                m.round >= 2 ? 'Championship' : 'Playoff semifinal',
-                style: const TextStyle(color: PodiumColors.gold, fontSize: 12),
-              ),
-            Row(
-              children: [
-                Expanded(child: Text(name(m.homeTeamId), style: style(m.homeTeamId))),
-                Text(m.isFinal ? m.homeScore.toStringAsFixed(1) : '-', style: style(m.homeTeamId)),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(child: Text(name(m.awayTeamId), style: style(m.awayTeamId))),
-                Text(m.isFinal && !m.isBye ? m.awayScore.toStringAsFixed(1) : '-', style: style(m.awayTeamId)),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              m.isFinal
-                  ? (m.isBye ? 'Bye week' : (m.winnerTeamId == null ? 'Final · Tie' : 'Final'))
-                  : 'Scheduled',
-              style: const TextStyle(color: PodiumColors.muted, fontSize: 12),
-            ),
+      padding: const EdgeInsets.all(16),
+      borderColor: mine ? PodiumColors.gold : PodiumColors.line,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              pill,
+              const SizedBox(width: 8),
+              if (m.isPlayoff)
+                StatusPill.gold(m.round >= 2 ? 'CHAMPIONSHIP' : 'SEMIFINAL'),
+              const Spacer(),
+              if (mine) const Text('Your game', style: TextStyle(fontSize: 12, color: PodiumColors.gold, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          side(m.homeTeamId, m.homeScore),
+          const SizedBox(height: 12),
+          side(m.awayTeamId, m.awayScore),
+          if (m.isFinal && !m.isBye && total > 0) ...[
+            const SizedBox(height: 14),
+            SplitBar(leftShare: m.homeScore / total, height: 6),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -202,16 +248,24 @@ class _MatchupsScreenState extends State<MatchupsScreen> {
                     children: [
                       if (league.isCommissioner(widget.userId)) _commissionerPanel(league),
                       if (league.phase == 'complete' && league.championTeamId != null)
-                        Padding(
-                          padding: const EdgeInsets.all(16),
+                        PodiumCard(
+                          margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                          borderColor: PodiumColors.gold,
                           child: Row(
                             children: [
-                              const Icon(Icons.emoji_events, color: PodiumColors.gold, size: 32),
-                              const SizedBox(width: 12),
+                              const TintedIcon(icon: Icons.emoji_events, size: 48),
+                              const SizedBox(width: 14),
                               Expanded(
-                                child: Text(
-                                  '${teams[league.championTeamId]?.teamName ?? 'Champion'} won the league!',
-                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('CHAMPION', style: PodiumText.overline.copyWith(color: PodiumColors.gold)),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${teams[league.championTeamId]?.teamName ?? 'Champion'} won the league!',
+                                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -233,10 +287,10 @@ class _MatchupsScreenState extends State<MatchupsScreen> {
                         )
                       else ...[
                         SizedBox(
-                          height: 52,
+                          height: 56,
                           child: ListView(
                             scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             children: [
                               for (final w in weeks)
                                 Padding(

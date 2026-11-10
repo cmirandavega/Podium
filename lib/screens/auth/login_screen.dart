@@ -51,8 +51,20 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return AuthScaffold(
-      title: 'Log in to Podium',
-      subtitle: 'Your leagues, rosters, and trades across every sport.',
+      title: 'Welcome back',
+      subtitle: 'Every sport. One league. Top step.',
+      footer: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text('New to Podium?', style: TextStyle(color: PodiumColors.silver)),
+          TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RegisterScreen()),
+            ),
+            child: const Text('Create an account'),
+          ),
+        ],
+      ),
       children: [
         Form(
           key: _formKey,
@@ -96,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: const Text('Forgot password?'),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 FormError(message: _error),
                 FilledButton(
                   onPressed: _loading ? null : _logIn,
@@ -107,19 +119,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2.5),
                         )
                       : const Text('Log in'),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text('New to Podium?', style: TextStyle(color: PodiumColors.muted)),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const RegisterScreen()),
-                      ),
-                      child: const Text('Create an account'),
-                    ),
-                  ],
                 ),
               ],
             ),

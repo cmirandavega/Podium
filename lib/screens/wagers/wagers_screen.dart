@@ -9,6 +9,7 @@ import '../../services/matchup_service.dart';
 import '../../services/team_service.dart';
 import '../../services/wager_service.dart';
 import '../../theme.dart';
+import '../../widgets/podium_ui.dart';
 
 /// Use Case 13: wager Podium currency against league members on this
 /// week's matchup winners.
@@ -72,6 +73,136 @@ class _WagersScreenState extends State<WagersScreen> {
     );
   }
 
+  String _otherTeam(Wager w, Map<String, Team> teams, Map<String, Matchup> games) {
+    final game = games[w.matchupId];
+    if (game == null) return 'the other team';
+    final otherId = game.homeTeamId == w.pickTeamId ? game.awayTeamId : game.homeTeamId;
+    return teams[otherId]?.teamName ?? 'the other team';
+  }
+
+  Widget _offerCard(League league, LeagueMember? me, Wager w, Map<String, Team> teams, Map<String, Matchup> games) {
+    final pick = teams[w.pickTeamId]?.teamName ?? 'Team';
+    final other = _otherTeam(w, teams, games);
+    return PodiumCard(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              InitialsAvatar(name: w.creatorName, size: 34),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('@${w.creatorName}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+              StatusPill(label: 'WEEK ${w.week}'),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _PickSide(label: 'THEY TAKE', team: pick, color: PodiumColors.silver),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Text('VS', style: PodiumText.score(size: 14, color: PodiumColors.muted, weight: FontWeight.w600)),
+              ),
+              Expanded(
+                child: _PickSide(label: 'YOU TAKE', team: other, color: PodiumColors.gold, alignEnd: true),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: _busy || me == null || games[w.matchupId] == null || league.lineupLocked
+                ? null
+                : () => _run(
+                      () => _service.accept(
+                        league: league,
+                        me: me,
+                        wager: w,
+                        matchup: games[w.matchupId]!,
+                      ),
+                      'Wager matched. Good luck!',
+                    ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text('Take it  ·  '),
+                Text(formatCount(w.amount), style: PodiumText.score(size: 20, color: PodiumColors.navy)),
+                const SizedBox(width: 4),
+                const Text('coins'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Winner collects ${formatCount(w.amount * 2)} coins.',
+            textAlign: TextAlign.center,
+            style: PodiumText.caption,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _historyRow(League league, Wager w, Map<String, Team> teams, Map<String, Matchup> games) {
+    final involved = w.involves(widget.userId);
+    final IconData icon;
+    final Color color;
+    final Color tint;
+    if (w.status == 'won' && w.winnerId == widget.userId) {
+      icon = Icons.emoji_events_outlined;
+      color = PodiumColors.gold;
+      tint = PodiumColors.goldTint;
+    } else if (w.status == 'won' && involved) {
+      icon = Icons.close_rounded;
+      color = PodiumColors.dangerText;
+      tint = PodiumColors.dangerTint;
+    } else if (w.isSettled || w.status == 'cancelled') {
+      icon = Icons.check_rounded;
+      color = PodiumColors.muted;
+      tint = PodiumColors.silverTint;
+    } else {
+      icon = Icons.hourglass_top_rounded;
+      color = PodiumColors.silver;
+      tint = PodiumColors.silverTint;
+    }
+    return PodiumCard(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+      radius: PodiumRadii.tile,
+      child: Row(
+        children: [
+          TintedIcon(icon: icon, color: color, background: tint, size: 36),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_describe(w, teams, games), style: const TextStyle(fontSize: 13, height: 1.35)),
+                const SizedBox(height: 2),
+                Text('Week ${w.week}', style: PodiumText.caption),
+              ],
+            ),
+          ),
+          if (w.isOpen && w.creatorId == widget.userId)
+            TextButton(
+              onPressed: _busy ? null : () => _run(() => _service.cancel(league: league, wager: w), 'Wager withdrawn.'),
+              child: const Text('Withdraw'),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(left: 8, right: 4),
+              child: Text(formatCount(w.amount), style: PodiumText.score(size: 18, color: color, weight: FontWeight.w600)),
+            ),
+        ],
+      ),
+    );
+  }
+
   String _describe(Wager w, Map<String, Team> teams, Map<String, Matchup> games) {
     final pick = teams[w.pickTeamId]?.teamName ?? 'Team';
     final game = games[w.matchupId];
@@ -132,86 +263,66 @@ class _WagersScreenState extends State<WagersScreen> {
                           return ListView(
                             padding: const EdgeInsets.only(bottom: 96),
                             children: [
-                              Container(
-                                margin: const EdgeInsets.all(16),
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: PodiumColors.field,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: PodiumColors.gold),
-                                ),
+                              PodiumCard(
+                                margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                                padding: const EdgeInsets.all(20),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.toll_outlined, color: PodiumColors.gold, size: 32),
-                                    const SizedBox(width: 12),
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          '${me?.coins ?? '-'} Podium coins',
-                                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-                                        ),
-                                        const Text('No cash value', style: TextStyle(color: PodiumColors.muted)),
-                                      ],
+                                    const CoinIcon(size: 48),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text('YOUR BALANCE', style: PodiumText.overline),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            me == null ? '—' : formatCount(me.coins),
+                                            style: PodiumText.score(size: 40, color: PodiumColors.gold),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          const Text('Podium coins · no cash value', style: PodiumText.caption),
+                                        ],
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
                               if (league.lineupLocked)
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 16),
-                                  child: Text('Wagers are closed while lineups are locked.',
-                                      style: TextStyle(color: PodiumColors.muted)),
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                                  child: Row(
+                                    children: [
+                                      const StatusPill.live(),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          'Wagers are closed while lineups are locked.',
+                                          style: PodiumText.caption.copyWith(color: PodiumColors.silver),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               const Padding(
-                                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-                                child: Text('Open offers', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                                padding: EdgeInsets.fromLTRB(16, 4, 16, 10),
+                                child: SectionHeader('Open offers'),
                               ),
                               if (offers.isEmpty)
                                 const Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 16),
-                                  child: Text('No open offers.', style: TextStyle(color: PodiumColors.muted)),
-                                ),
-                              for (final w in offers)
-                                ListTile(
-                                  title: Text(_describe(w, teams, games)),
-                                  trailing: FilledButton(
-                                    style: FilledButton.styleFrom(minimumSize: const Size(72, 36)),
-                                    onPressed: _busy || me == null || games[w.matchupId] == null
-                                        ? null
-                                        : () => _run(
-                                              () => _service.accept(
-                                                league: league,
-                                                me: me,
-                                                wager: w,
-                                                matchup: games[w.matchupId]!,
-                                              ),
-                                              'Wager matched. Good luck!',
-                                            ),
-                                    child: const Text('Take'),
+                                  padding: EdgeInsets.fromLTRB(16, 0, 16, 0),
+                                  child: EmptyCard(
+                                    icon: Icons.toll_outlined,
+                                    title: 'No open offers',
+                                    message: 'Post a wager and another member can take the other side.',
                                   ),
                                 ),
+                              for (final w in offers) _offerCard(league, me, w, teams, games),
                               const Padding(
-                                padding: EdgeInsets.fromLTRB(16, 20, 16, 4),
-                                child: Text('League wagers', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                                padding: EdgeInsets.fromLTRB(16, 20, 16, 10),
+                                child: SectionHeader('League wagers'),
                               ),
-                              for (final w in rest)
-                                ListTile(
-                                  leading: Icon(
-                                    w.isSettled ? Icons.check_circle_outline : Icons.hourglass_top,
-                                    color: w.winnerId == widget.userId ? PodiumColors.gold : PodiumColors.muted,
-                                  ),
-                                  title: Text(_describe(w, teams, games)),
-                                  subtitle: Text('Week ${w.week}', style: const TextStyle(color: PodiumColors.muted)),
-                                  trailing: w.isOpen && w.creatorId == widget.userId
-                                      ? TextButton(
-                                          onPressed: _busy
-                                              ? null
-                                              : () => _run(() => _service.cancel(league: league, wager: w), 'Wager withdrawn.'),
-                                          child: const Text('Withdraw'),
-                                        )
-                                      : null,
-                                ),
+                              for (final w in rest) _historyRow(league, w, teams, games),
                             ],
                           );
                         },
@@ -330,6 +441,33 @@ class _NewWagerDialogState extends State<_NewWagerDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
         TextButton(onPressed: _submit, child: const Text('Place wager')),
+      ],
+    );
+  }
+}
+
+class _PickSide extends StatelessWidget {
+  const _PickSide({required this.label, required this.team, required this.color, this.alignEnd = false});
+
+  final String label;
+  final String team;
+  final Color color;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        Text(label, style: PodiumText.overline.copyWith(fontSize: 10, color: color)),
+        const SizedBox(height: 4),
+        Text(
+          team,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: alignEnd ? TextAlign.right : TextAlign.left,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
       ],
     );
   }
