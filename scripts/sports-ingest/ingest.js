@@ -12,6 +12,7 @@ const { fantasyPoints } = require('./scoring');
 
 const ADAPTERS = {
   nfl: require('./adapters/nfl'),
+  soccer: require('./adapters/soccer'),
 };
 
 function parseArgs(argv) {
@@ -38,7 +39,14 @@ async function main() {
   const options = { refresh: args.refresh };
 
   const games = await adapter.listGames(args.season, args.week, options);
-  if (games.length === 0) throw new Error(`No ${adapter.SPORT} games found for ${args.season} week ${args.week}.`);
+  if (games.length === 0) {
+    // Soccer weeks that land on an international break have no matches; that's not an error.
+    if (adapter.SPORT !== 'NFL') {
+      console.log(`No ${adapter.SPORT} games in ${args.season} week ${args.week}. Nothing to write.`);
+      return;
+    }
+    throw new Error(`No ${adapter.SPORT} games found for ${args.season} week ${args.week}.`);
+  }
   const finished = games.filter((g) => g.finished).slice(0, args.limit);
   console.log(`${adapter.SPORT} ${args.season} week ${args.week}: ${games.length} games, ${finished.length} to process.`);
 
@@ -65,6 +73,8 @@ async function main() {
     startDate: dates[0],
     endDate: dates[dates.length - 1],
     lockTime: dates[0],
+    // The NFL defines each week's dates; other sports only make sure the week exists.
+    keepExistingDates: adapter.SPORT !== 'NFL',
   };
 
   const top = [...rows].sort((a, b) => b.fantasyPoints - a.fantasyPoints).slice(0, 10);

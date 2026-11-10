@@ -17,10 +17,7 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web - '
-        'you can reconfigure this by running the FlutterFire CLI again.',
-      );
+      return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
@@ -65,4 +62,13 @@ class DefaultFirebaseOptions {
     storageBucket: 'podium-e5862.firebasestorage.app',
     iosBundleId: 'edu.gsu.podium.podium',
   );
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: "AIzaSyDhie-G_6RFgxkn0hH31u4PVJ3SnVnBhH8",
+    appId: "1:714168259621:web:1acab91eac97aacbf3dbcc",
+    messagingSenderId: "714168259621",
+    projectId: "podium-e5862",
+    authDomain: 'podium-e5862.firebaseapp.com',
+    storageBucket: 'podium-e5862.firebasestorage.app',
+   );
 }
+
