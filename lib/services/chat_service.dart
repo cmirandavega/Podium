@@ -1,19 +1,20 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
+import 'package:cloud_functions/cloud_functions.dart';
 import '../models/chat_message.dart';
 import '../models/league.dart';
 import 'report_service.dart';
 
 /// Use Case 7: league chat with moderation by the commissioner and admins.
-class ChatService {
-  ChatService({FirebaseFirestore? db, FirebaseAuth? auth})
+  class ChatService {
+    ChatService({FirebaseFirestore? db, FirebaseAuth? auth, FirebaseFunctions? functions})
       : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+        _auth = auth ?? FirebaseAuth.instance,
+        _functions = functions ?? FirebaseFunctions.instanceFor(region: 'us-central1');
 
   final FirebaseFirestore _db;
   final FirebaseAuth _auth;
-
+  final FirebaseFunctions _functions;
   CollectionReference<Map<String, dynamic>> _messages(String leagueId) =>
       _db.collection('leagues').doc(leagueId).collection('messages');
 
@@ -53,13 +54,14 @@ class ChatService {
     final error = validateBody(body);
     if (error != null) throw ArgumentError(error);
 
-    await _messages(league.id).add({
-      'senderId': uid,
-      'senderName': me.username,
-      'body': body.trim(),
-      'isDeleted': false,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    // The server re-checks membership, mutes and language before saving.
+    try {
+      await _functions
+          .httpsCallable('podiumSendMessage')
+          .call({'leagueId': league.id, 'body': body.trim()});
+    } on FirebaseFunctionsException catch (e) {
+      throw StateError(e.message ?? 'Message could not be sent.');
+    }
   }
 
   /// Senders can delete their own messages; commissioners and admins can

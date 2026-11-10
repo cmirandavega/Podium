@@ -164,7 +164,7 @@ exports.podiumRosterAction = onCall({region:REGION}, async request => {
   return {ok:true};
 });
 exports.podiumSendMessage = onCall({region:REGION},async request=>{
-  const {uid}=await requireUser(request);
+  const {uid, user}=await requireUser(request);
   const {leagueId,body,tradeId}=request.data||{};
   if(typeof body!=='string'||body.length>1000||(!body.trim()&&!tradeId))
     fail('invalid-argument','Enter a message of at most 1000 characters.');
@@ -181,7 +181,8 @@ exports.podiumSendMessage = onCall({region:REGION},async request=>{
       if(!trade.exists||trade.data().leagueId!==leagueId)
         fail('failed-precondition','Trade not found in this league.');
     }
-    tx.create(message,{senderId:uid,body:body.trim(),isDeleted:false,
+     tx.create(message,{senderId:uid,senderName:user.username||user.displayName||'Member',
+      body:body.trim(),isDeleted:false,
       createdAt:FV.serverTimestamp(),...(tradeId?{tradeId}:{}),type:tradeId?'trade':'text'});
   });
   return {messageId:message.id};
