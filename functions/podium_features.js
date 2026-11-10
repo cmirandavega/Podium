@@ -33,9 +33,14 @@ const eligibleSports = async (tx, sports) => {
     fail('failed-precondition', 'A selected sport is unavailable.');
 };
 const member = async (tx, leagueId, uid) => {
-  const snap = await tx.get(leagueRef(leagueId).collection('members').doc(uid));
-  if (!snap.exists) fail('permission-denied', 'You must join this league.');
-  return snap.data();
+  const ref = leagueRef(leagueId);
+  const snap = await tx.get(ref.collection('members').doc(uid));
+  if (snap.exists) return snap.data();
+  // Leagues created by the app keep members in the memberIds array.
+  const league = await tx.get(ref);
+  const ids = league.exists ? (league.data().memberIds || []) : [];
+  if (!ids.includes(uid)) fail('permission-denied', 'You must join this league.');
+  return { userId: uid, isMuted: false };
 };
 exports.podiumCreateLeague = onCall({region:REGION}, async request => {
   const {uid} = await requireUser(request);
@@ -197,8 +202,9 @@ exports.podiumModerateChat=onCall({region:REGION},async request=>{
       if(!validId(userId)||typeof muted!=='boolean'||userId===league.commissionerId)
         fail('invalid-argument','Invalid member or mute setting.');
       const ref=leagueRef(leagueId).collection('members').doc(userId);
-      if(!(await tx.get(ref)).exists)fail('not-found','Member missing.');
-      tx.update(ref,{isMuted:muted});
+      const snap=await tx.get(ref);
+      if(!snap.exists && !(league.memberIds||[]).includes(userId))fail('not-found','Member missing.');
+      tx.set(ref,{userId,isMuted:muted},{merge:true})
     }else fail('invalid-argument','Unknown moderation action.');
   });
   return {ok:true};
@@ -207,13 +213,17 @@ exports.podiumModerateChat=onCall({region:REGION},async request=>{
 exports.podiumChatNotify = onDocumentCreated({document:'leagues/{leagueId}/messages/{messageId}',region:REGION},async event=>{
   const msg=event.data?.data();if(!msg)return;
   const {leagueId,messageId}=event.params;
-  const members=await leagueRef(leagueId).collection('members').get();
-  for(const m of members.docs){
-    if(m.id===msg.senderId)continue;
-    await db.collection('notifications').add({userId:m.id,type:'league_chat',
-      message:`New message in league ${leagueId}`,relatedId:leagueId,isRead:false,
+  const sender=msg.senderId||msg.userId||msg.authorId;
+  const leagueSnap=await leagueRef(leagueId).get();
+  const memberDocs=await leagueRef(leagueId).collection('members').get();
+  const ids=new Set([...(leagueSnap.data()?.memberIds||[]),...memberDocs.docs.map(d=>d.id)]);
+  const leagueName=leagueSnap.data()?.name||'your league';
+  for(const id of ids){
+    if(id===sender)continue;
+    await db.collection('notifications').add({userId:id,type:'league_chat',
+      message:`New message in ${leagueName}`,relatedId:leagueId,isRead:false,
       createdAt:FV.serverTimestamp()});
-    const tokens=await db.collection('users').doc(m.id).collection('fcmTokens').get();
+    const tokens=await db.collection('users').doc(id).collection('fcmTokens').get();
     const values=tokens.docs.map(t=>t.id);
     if(values.length){
       try { await admin.messaging().sendEachForMulticast({tokens:values.slice(0,500),
