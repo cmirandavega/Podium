@@ -19,5 +19,10 @@
   "devDependencies": {
     "firebase-functions-test": "^3.4.1"
   },
-  "private": true
+  "private": true,
+  "allowScripts": {
+    "protobufjs@7.6.6": true,
+    "@firebase/util@1.15.3": true,
+    "@parcel/watcher@2.6.0": true
+  }
 }
