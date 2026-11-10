@@ -226,8 +226,9 @@ ThemeData buildPodiumTheme() {
       ),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
+      // Not full-width: ElevatedButtons also sit in dialog action rows.
       style: ElevatedButton.styleFrom(
-        minimumSize: const Size.fromHeight(52),
+        minimumSize: const Size(64, 50),
         backgroundColor: PodiumColors.gold,
         foregroundColor: PodiumColors.navy,
         elevation: 0,
@@ -309,6 +310,29 @@ ThemeData buildPodiumTheme() {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(PodiumRadii.control),
         side: const BorderSide(color: PodiumColors.line),
+      ),
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: PodiumColors.deep,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      height: 68,
+      indicatorColor: PodiumColors.goldTint,
+      indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(PodiumRadii.control)),
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (states) => TextStyle(
+          fontFamily: body,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: states.contains(WidgetState.selected) ? PodiumColors.gold : PodiumColors.muted,
+        ),
+      ),
+      iconTheme: WidgetStateProperty.resolveWith(
+        (states) => IconThemeData(
+          size: 23,
+          color: states.contains(WidgetState.selected) ? PodiumColors.gold : PodiumColors.muted,
+        ),
       ),
     ),
     dividerTheme: const DividerThemeData(color: PodiumColors.line, thickness: 1, space: 1),

@@ -1,243 +1,141 @@
 import 'package:flutter/material.dart';
 
 import '../../models/app_user.dart';
-import '../../services/auth_service.dart';
-import '../../services/user_service.dart';
+import '../../models/league.dart';
+import '../../services/league_service.dart';
 import '../../theme.dart';
-import '../../widgets/notification_bell.dart';
-import '../../widgets/podium_ui.dart';
-import '../admin/admin_screen.dart';
-import '../leaderboard/leaderboard_screen.dart';
-import '../leagues/my_leagues_section.dart';
-import '../mock_draft_screen.dart';
-import '../profile/profile_screen.dart';
-import '../reports/report_user_screen.dart';
-import '../scores/scores_screen.dart';
+import '../coach/coach_screen.dart';
+import 'home_tab.dart';
+import 'leaders_tab.dart';
+import 'matchup_tab.dart';
+import 'picks_tab.dart';
+import 'shell_widgets.dart';
 
-class HomeScreen extends StatelessWidget {
+/// The signed-in app: five bottom tabs (Home, Picks, Matchup, Leaders,
+/// Coach). Picks, Matchup, Leaders, and Coach follow the active league,
+/// which the user switches from Home or any tab header.
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.user});
 
   final AppUser user;
 
-  static const _weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-  static const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
-  String get _firstName {
-    final name = user.nameToShow.trim();
-    return name.isEmpty ? 'there' : name.split(' ').first;
-  }
+class _HomeScreenState extends State<HomeScreen> {
+  late final Stream<List<League>> _leagues = LeagueService().watchMyLeagues(widget.user.uid);
+  int _tab = ShellTab.home;
+  String? _leagueId;
 
-  String _greeting(DateTime now) {
-    if (now.hour < 12) return 'Good morning';
-    if (now.hour < 17) return 'Good afternoon';
-    return 'Good evening';
-  }
-
-  void _push(BuildContext context, Widget screen) =>
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  void _selectLeague(String id) => setState(() => _leagueId = id);
+  void _goTo(int tab) => setState(() => _tab = tab);
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final dateLine = '${_weekdays[now.weekday - 1]} · ${_months[now.month - 1]} ${now.day}'.toUpperCase();
+    final user = widget.user;
+    return StreamBuilder<List<League>>(
+      stream: _leagues,
+      builder: (context, snap) {
+        final leagues = snap.data ?? const <League>[];
+        League? active;
+        for (final l in leagues) {
+          if (l.id == _leagueId) active = l;
+        }
+        if (active == null && leagues.isNotEmpty) active = leagues.first;
+        final league = active;
 
-    return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: 64,
-        title: const PodiumWordmark(size: 22),
-        actions: [
-          if (user.isAdmin)
-            IconButton(
-              tooltip: 'Admin tools',
-              icon: const Icon(Icons.admin_panel_settings_outlined),
-              onPressed: () => _push(context, AdminScreen(currentUser: user)),
-            ),
-          IconButton(
-            tooltip: 'Live scoring',
-            icon: const Icon(Icons.sports_football_outlined),
-            onPressed: () => _push(context, const ScoresScreen()),
+        Widget leagueTab(String title, String message, Widget Function(League l) build) {
+          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+          if (league == null) return NoLeagueView(user: user, title: title, message: message);
+          return build(league);
+        }
+
+        final tabs = <Widget>[
+          HomeTab(
+            user: user,
+            leagues: leagues,
+            active: league,
+            leaguesLoaded: snap.hasData,
+            onSelectLeague: _selectLeague,
+            onGoTo: _goTo,
           ),
-          NotificationBell(uid: user.uid),
-          PopupMenuButton<String>(
-            tooltip: 'Account',
-            icon: InitialsAvatar(
-              name: user.nameToShow,
-              size: 34,
-              ring: PodiumColors.gold,
-              foreground: PodiumColors.chalk,
+          leagueTab(
+            'Picks',
+            'Picks are wagers on your league\'s weekly games, paid in Podium coins.',
+            (l) => PicksTab(
+              key: ValueKey('picks_${l.id}'),
+              user: user,
+              league: l,
+              leagues: leagues,
+              onSelectLeague: _selectLeague,
             ),
-            onSelected: (value) {
-              switch (value) {
-                case 'profile':
-                  _push(context, ProfileScreen(user: user));
-                case 'report':
-                  _openReportPicker(context);
-                case 'logout':
-                  AuthService().signOut();
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'profile',
-                child: ListTile(leading: Icon(Icons.person_outline), title: Text('Profile')),
-              ),
-              PopupMenuItem(
-                value: 'report',
-                child: ListTile(leading: Icon(Icons.flag_outlined), title: Text('Report a user')),
-              ),
-              PopupMenuItem(
-                value: 'logout',
-                child: ListTile(leading: Icon(Icons.logout), title: Text('Log out')),
-              ),
-            ],
           ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: SafeArea(
-        top: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
-          children: [
-            Text(dateLine, style: PodiumText.overline),
-            const SizedBox(height: 6),
-            Text(
-              '${_greeting(now)}, $_firstName',
-              style: Theme.of(context).textTheme.headlineSmall,
+          leagueTab(
+            'Matchup',
+            'Your weekly head-to-head shows here once you\'re in a league.',
+            (l) => MatchupTab(
+              key: ValueKey('matchup_${l.id}'),
+              user: user,
+              league: l,
+              leagues: leagues,
+              onSelectLeague: _selectLeague,
             ),
-            const SizedBox(height: 2),
-            Text('@${user.username}', style: const TextStyle(color: PodiumColors.muted)),
-            const SizedBox(height: 22),
-            Row(
-              children: [
-                Expanded(
-                  child: QuickActionTile(
-                    icon: Icons.sports_football_outlined,
-                    label: 'Live scores',
-                    caption: 'Every sport',
-                    onTap: () => _push(context, const ScoresScreen()),
-                  ),
+          ),
+          LeadersTab(
+            key: ValueKey('leaders_${league?.id ?? 'none'}'),
+            user: user,
+            league: league,
+            leagues: leagues,
+            onSelectLeague: _selectLeague,
+          ),
+          leagueTab(
+            'Coach',
+            'The AI Coach gives lineup advice from your league roster.',
+            (l) => CoachScreen(key: ValueKey('coach_${l.id}'), leagueId: l.id, userId: user.uid),
+          ),
+        ];
+
+        return Scaffold(
+          body: IndexedStack(index: _tab, children: tabs),
+          bottomNavigationBar: DecoratedBox(
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: PodiumColors.line)),
+            ),
+            child: NavigationBar(
+              selectedIndex: _tab,
+              onDestinationSelected: _goTo,
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home_rounded),
+                  label: 'Home',
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: QuickActionTile(
-                    icon: Icons.emoji_events_outlined,
-                    label: 'Leaderboard',
-                    caption: 'Top teams',
-                    color: PodiumColors.silver,
-                    tint: PodiumColors.silverTint,
-                    onTap: () => _push(context, const LeaderboardScreen()),
-                  ),
+                NavigationDestination(
+                  icon: Icon(Icons.track_changes_outlined),
+                  selectedIcon: Icon(Icons.track_changes_rounded),
+                  label: 'Picks',
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: QuickActionTile(
-                    icon: Icons.grid_view_rounded,
-                    label: 'Mock draft',
-                    caption: 'Practice',
-                    color: PodiumColors.bronzeText,
-                    tint: PodiumColors.bronzeTint,
-                    onTap: () => _push(context, const MockDraftScreen()),
-                  ),
+                NavigationDestination(
+                  icon: Icon(Icons.bolt_outlined),
+                  selectedIcon: Icon(Icons.bolt_rounded),
+                  label: 'Matchup',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.emoji_events_outlined),
+                  selectedIcon: Icon(Icons.emoji_events_rounded),
+                  label: 'Leaders',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.auto_awesome_outlined),
+                  selectedIcon: Icon(Icons.auto_awesome),
+                  label: 'Coach',
                 ),
               ],
             ),
-            const SizedBox(height: 26),
-            MyLeaguesSection(user: user),
-            const SizedBox(height: 26),
-            PodiumCard(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              radius: PodiumRadii.tile,
-              onTap: () => _openReportPicker(context),
-              child: const Row(
-                children: [
-                  TintedIcon(
-                    icon: Icons.flag_outlined,
-                    color: PodiumColors.dangerText,
-                    background: PodiumColors.dangerTint,
-                    size: 36,
-                  ),
-                  SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Report a user', style: TextStyle(fontWeight: FontWeight.w600)),
-                        SizedBox(height: 2),
-                        Text(
-                          'Flag harassment or cheating for admin review',
-                          style: TextStyle(fontSize: 12, color: PodiumColors.muted),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.chevron_right, color: PodiumColors.muted),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Pick another (non-admin) user, then open the report form.
-  void _openReportPicker(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: const Text('Who are you reporting?')),
-          body: StreamBuilder<List<AppUser>>(
-            stream: UserService().watchAllUsers(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return const Center(child: Text('Unable to load users.'));
-              }
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final users = snapshot.data!
-                  .where((other) => other.uid != user.uid && !other.isAdmin)
-                  .toList();
-              if (users.isEmpty) {
-                return const Center(child: Text('No users available to report.'));
-              }
-              return ListView.separated(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-                itemCount: users.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final other = users[index];
-                  return PodiumCard(
-                    radius: PodiumRadii.tile,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => ReportUserScreen(reportedUser: other)),
-                    ),
-                    child: Row(
-                      children: [
-                        InitialsAvatar(name: other.nameToShow),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(other.nameToShow, style: const TextStyle(fontWeight: FontWeight.w600)),
-                              Text('@${other.username}',
-                                  style: const TextStyle(fontSize: 12, color: PodiumColors.muted)),
-                            ],
-                          ),
-                        ),
-                        const Icon(Icons.chevron_right, color: PodiumColors.muted),
-                      ],
-                    ),
-                  );
-                },
-              );
-            },
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
