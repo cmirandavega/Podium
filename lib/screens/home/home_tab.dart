@@ -26,7 +26,6 @@ import '../mock_draft_screen.dart';
 import '../profile/profile_screen.dart';
 import '../reports/report_user_screen.dart';
 import '../scores/scores_screen.dart';
-import '../team/team_screen.dart';
 import '../trades/trades_screen.dart';
 import 'shell_widgets.dart';
 
@@ -529,7 +528,7 @@ class _RankCardState extends State<_RankCard> {
   }
 }
 
-/// Four shortcuts into the league: team, chat, live scores, and everything else.
+/// Three shortcuts into the league: league tools (My team), chat, and live scores.
 class _LeagueShortcuts extends StatelessWidget {
   const _LeagueShortcuts({required this.league, required this.user});
 
@@ -555,17 +554,12 @@ class _LeagueShortcuts extends StatelessWidget {
         );
     return Row(
       children: [
-        item(Icons.groups_2_outlined, 'My team', () => open(TeamScreen(
-              league: league,
-              teamId: Team.idFor(league.id, user.uid),
-              viewerId: user.uid,
-            ))),
+        // My team opens the league's tools (roster, draft, trades, standings, and more).
+        item(Icons.groups_2_outlined, 'My team', () => open(LeagueHomeScreen(leagueId: league.id, user: user))),
         const SizedBox(width: 8),
         item(Icons.forum_outlined, 'Chat', () => open(LeagueChatScreen(league: league, user: user))),
         const SizedBox(width: 8),
         item(Icons.sports_football_outlined, 'Scores', () => open(const ScoresScreen())),
-        const SizedBox(width: 8),
-        item(Icons.apps_rounded, 'More', () => open(LeagueHomeScreen(leagueId: league.id, user: user))),
       ],
     );
   }

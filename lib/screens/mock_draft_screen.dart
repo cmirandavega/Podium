@@ -2,6 +2,9 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
+import '../widgets/podium_ui.dart';
+
 enum DraftStatus { notStarted, inProgress, completed }
 
 enum DraftFormat { snake, linear }
@@ -207,6 +210,11 @@ class _MockDraftScreenState extends State<MockDraftScreen> {
   int rounds = 5;
   String sport = 'NFL';
   DraftFormat format = DraftFormat.snake;
+
+  // Filters for the available-players list (view only; CPU picks ignore them).
+  final _search = TextEditingController();
+  String _query = '';
+  String? _position;
 
   // Fictional players and statistics for the mock draft.
   List<DraftPlayer> get demoPlayers {
@@ -468,10 +476,14 @@ class _MockDraftScreenState extends State<MockDraftScreen> {
   void dispose() {
     controller.removeListener(_refresh);
     controller.dispose();
+    _search.dispose();
     super.dispose();
   }
 
   void _startDraft() {
+    _search.clear();
+    _query = '';
+    _position = null;
     controller.configure(
       teams: teamCount,
       draftRounds: rounds,
@@ -486,13 +498,26 @@ class _MockDraftScreenState extends State<MockDraftScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mock Draft Simulator'),
+        title: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Mock Draft'),
+            Text(
+              'Practice against CPU teams',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: PodiumColors.muted),
+            ),
+          ],
+        ),
         actions: [
           if (controller.status != DraftStatus.notStarted)
-            IconButton(
-              tooltip: 'Restart draft',
-              icon: const Icon(Icons.restart_alt),
-              onPressed: controller.reset,
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: SquareIconButton(
+                icon: Icons.restart_alt,
+                tooltip: 'Restart draft',
+                onPressed: controller.reset,
+              ),
             ),
         ],
       ),
@@ -504,203 +529,545 @@ class _MockDraftScreenState extends State<MockDraftScreen> {
     );
   }
 
+  Widget _optionCard({required String label, required Widget child}) {
+    return PodiumCard(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label.toUpperCase(), style: PodiumText.overline),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _choices<T>(List<T> values, T selected, String Function(T) label, ValueChanged<T> onPick) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final v in values)
+          ChoiceChip(
+            label: Text(label(v)),
+            selected: v == selected,
+            onSelected: (_) => setState(() => onPick(v)),
+          ),
+      ],
+    );
+  }
+
   Widget _buildSetup() {
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       children: [
-        const Text(
-          'Create a Mock Draft',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 20),
-        const Text('Number of Teams'),
-        DropdownButton<int>(
-          isExpanded: true,
-          value: teamCount,
-          items: [4, 6, 8, 10, 12]
-              .map((n) => DropdownMenuItem(value: n, child: Text('$n Teams')))
-              .toList(),
-          onChanged: (value) => setState(() => teamCount = value!),
-        ),
-        const SizedBox(height: 16),
-        const Text('Number of Rounds'),
-        DropdownButton<int>(
-          isExpanded: true,
-          value: rounds,
-          items: [3, 5, 8, 10]
-              .map((n) => DropdownMenuItem(value: n, child: Text('$n Rounds')))
-              .toList(),
-          onChanged: (value) => setState(() => rounds = value!),
-        ),
-        const SizedBox(height: 16),
-        const Text('Sport'),
-        DropdownButton<String>(
-          isExpanded: true,
-          value: sport,
-          items: [
-            'NFL',
-            'NBA',
-            'MLB',
-            'Soccer',
-            'Multi-Sport',
-          ].map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-          onChanged: (value) => setState(() => sport = value!),
-        ),
-        const SizedBox(height: 16),
-        const Text('Draft Format'),
-        DropdownButton<DraftFormat>(
-          isExpanded: true,
-          value: format,
-          items: DraftFormat.values
-              .map(
-                (f) => DropdownMenuItem(
-                  value: f,
-                  child: Text(
-                    f == DraftFormat.snake ? 'Snake Draft' : 'Linear Draft',
-                  ),
+        PodiumCard(
+          margin: const EdgeInsets.only(bottom: 16),
+          child: const Row(
+            children: [
+              TintedIcon(
+                icon: Icons.grid_view_rounded,
+                color: PodiumColors.bronzeText,
+                background: PodiumColors.bronzeTint,
+                size: 48,
+              ),
+              SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Set up a practice draft', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                    SizedBox(height: 4),
+                    Text(
+                      'Fictional players and CPU teams. Nothing here touches your real leagues.',
+                      style: TextStyle(fontSize: 13, color: PodiumColors.muted),
+                    ),
+                  ],
                 ),
-              )
-              .toList(),
-          onChanged: (value) => setState(() => format = value!),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 24),
-        ElevatedButton(
-          onPressed: _startDraft,
-          child: const Text('Start Mock Draft'),
+        _optionCard(
+          label: 'Teams',
+          child: _choices<int>(const [4, 6, 8, 10, 12], teamCount, (n) => '$n', (n) => teamCount = n),
+        ),
+        _optionCard(
+          label: 'Rounds',
+          child: _choices<int>(const [3, 5, 8, 10], rounds, (n) => '$n', (n) => rounds = n),
+        ),
+        _optionCard(
+          label: 'Sport',
+          child: _choices<String>(
+            const ['NFL', 'NBA', 'MLB', 'Soccer', 'Multi-Sport'],
+            sport,
+            (s) => s,
+            (s) => sport = s,
+          ),
+        ),
+        _optionCard(
+          label: 'Format',
+          child: SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<DraftFormat>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: DraftFormat.snake, label: Text('Snake'), icon: Icon(Icons.swap_vert)),
+                ButtonSegment(value: DraftFormat.linear, label: Text('Linear'), icon: Icon(Icons.south)),
+              ],
+              selected: {format},
+              onSelectionChanged: (s) => setState(() => format = s.first),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
+          child: Text(
+            '${teamCount * rounds} total picks · you pick first'
+            '${format == DraftFormat.snake ? ', order reverses each round' : ''}',
+            style: PodiumText.caption.copyWith(fontSize: 13),
+          ),
         ),
         if (controller.errorMessage != null)
           Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: Text(
-              controller.errorMessage!,
-              style: const TextStyle(color: Colors.red),
-            ),
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(controller.errorMessage!, style: const TextStyle(color: PodiumColors.dangerText)),
           ),
+        FilledButton.icon(
+          onPressed: _startDraft,
+          icon: const Icon(Icons.play_arrow_rounded),
+          label: const Text('Start mock draft'),
+        ),
       ],
     );
   }
 
   Widget _buildDraft() {
+    final progress = controller.totalPicks == 0 ? 0.0 : controller.currentPick / controller.totalPicks;
+    final positions = <String>{for (final p in controller.availablePlayers) p.position}.toList()..sort();
+    final query = _query.trim().toLowerCase();
+    final players = controller.availablePlayers
+        .where((p) => _position == null || p.position == _position)
+        .where((p) => query.isEmpty || p.name.toLowerCase().contains(query) || p.team.toLowerCase().contains(query))
+        .toList()
+      ..sort((a, b) => _points(b).compareTo(_points(a)));
+    final roster = controller.userTeam.roster;
+
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Text(
-                'Round ${controller.currentRound} of $rounds',
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+          child: PodiumCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('ROUND', style: PodiumText.overline),
+                        const SizedBox(height: 4),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text('${controller.currentRound}', style: PodiumText.score(size: 40, color: PodiumColors.gold)),
+                            Text(' / $rounds', style: PodiumText.score(size: 22, color: PodiumColors.muted)),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 24),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('PICK', style: PodiumText.overline),
+                        const SizedBox(height: 4),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text('${controller.currentPick + 1}', style: PodiumText.score(size: 40)),
+                            Text(' / ${controller.totalPicks}', style: PodiumText.score(size: 22, color: PodiumColors.muted)),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    controller.isUserTurn
+                        ? const StatusPill.gold('YOUR PICK')
+                        : const StatusPill(label: 'CPU DRAFTING'),
+                  ],
                 ),
-              ),
-              Text(
-                'Pick ${controller.currentPick + 1} '
-                'of ${controller.totalPicks}',
-              ),
-              const SizedBox(height: 8),
-              Text(controller.isUserTurn ? 'Your Turn!' : 'CPU is drafting...'),
-              if (controller.errorMessage != null)
-                Text(
-                  controller.errorMessage!,
-                  style: const TextStyle(color: Colors.red),
+                const SizedBox(height: 14),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(PodiumRadii.pill),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 6,
+                    color: PodiumColors.gold,
+                    backgroundColor: PodiumColors.line,
+                  ),
                 ),
-            ],
+                if (controller.errorMessage != null) ...[
+                  const SizedBox(height: 10),
+                  Text(controller.errorMessage!, style: const TextStyle(color: PodiumColors.dangerText, fontSize: 13)),
+                ],
+              ],
+            ),
           ),
         ),
-        const Divider(),
-        Expanded(
-          child: ListView.builder(
-            itemCount: controller.availablePlayers.length,
-            itemBuilder: (context, index) {
-              final player = controller.availablePlayers[index];
-
-              return ListTile(
-                title: Text(player.name),
-                subtitle: Text(
-                  '${player.sport} | ${player.position} | '
-                  '${player.team}',
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => _openPlayerDetails(player),
-              );
-            },
-          ),
-        ),
-        const Divider(),
         Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: TextField(
+            controller: _search,
+            onChanged: (v) => setState(() => _query = v),
+            decoration: InputDecoration(
+              hintText: 'Search players or teams',
+              prefixIcon: const Icon(Icons.search),
+              isDense: true,
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear search',
+                      icon: const Icon(Icons.close),
+                      onPressed: () => setState(() {
+                        _search.clear();
+                        _query = '';
+                      }),
+                    ),
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 52,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
             children: [
-              Text(
-                'My Roster (${controller.userTeam.roster.length}/$rounds)',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              SizedBox(
-                height: 90,
-                child: ListView(
-                  children: controller.userTeam.roster
-                      .map((p) => Text('${p.name} - ${p.position}'))
-                      .toList(),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: const Text('All'),
+                  selected: _position == null,
+                  onSelected: (_) => setState(() => _position = null),
                 ),
               ),
-              TextButton(
-                onPressed: controller.reset,
-                child: const Text('Leave Draft'),
-              ),
+              for (final pos in positions)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(pos),
+                    selected: _position == pos,
+                    onSelected: (_) => setState(() => _position = _position == pos ? null : pos),
+                  ),
+                ),
             ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+          child: Row(
+            children: [
+              Text('BEST AVAILABLE · ${players.length}', style: PodiumText.overline),
+              const Spacer(),
+              const Text('FPTS', style: PodiumText.overline),
+            ],
+          ),
+        ),
+        Expanded(
+          child: players.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: EmptyCard(
+                      icon: Icons.person_search_outlined,
+                      title: 'No players match',
+                      message: 'Clear the search or pick another position.',
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  itemCount: players.length,
+                  itemBuilder: (context, i) => _PlayerRow(
+                    player: players[i],
+                    points: _points(players[i]),
+                    onTap: () => _openPlayerDetails(players[i]),
+                  ),
+                ),
+        ),
+        Container(
+          decoration: const BoxDecoration(
+            color: PodiumColors.deep,
+            border: Border(top: BorderSide(color: PodiumColors.line)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 12, 12),
+              child: Row(
+                children: [
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('MY ROSTER', style: PodiumText.overline),
+                      const SizedBox(height: 2),
+                      Text('${roster.length}/$rounds', style: PodiumText.score(size: 24, color: PodiumColors.gold)),
+                    ],
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: SizedBox(
+                      height: 36,
+                      child: roster.isEmpty
+                          ? const Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text('Tap a player to see stats and draft',
+                                  style: TextStyle(fontSize: 13, color: PodiumColors.muted)),
+                            )
+                          : ListView(
+                              scrollDirection: Axis.horizontal,
+                              children: [
+                                for (final p in roster)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: Chip(
+                                      visualDensity: VisualDensity.compact,
+                                      label: Text('${p.position} ${_lastName(p.name)}'),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: controller.reset,
+                    child: const Text('Leave'),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ],
     );
   }
 
+  Widget _stat(String label, String value) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(value, style: PodiumText.score(size: 30)),
+          const SizedBox(height: 4),
+          Text(label.toUpperCase(), style: PodiumText.overline.copyWith(fontSize: 11)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildResults() {
+    final myTeam = controller.teams.where((t) => t.isUser).toList();
+    final others = controller.teams.where((t) => !t.isUser).toList();
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       children: [
-        const Text(
-          'Draft Complete!',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        Text('Total Picks: ${controller.currentPick}'),
-        Text('Teams: ${controller.teamCount}'),
-        Text('Format: ${controller.format.name}'),
-        const SizedBox(height: 20),
-        ...controller.teams.map(
-          (team) => Card(
-            child: ExpansionTile(
-              initiallyExpanded: team.isUser,
-              title: Text(team.name),
-              subtitle: Text('${team.roster.length} players drafted'),
-              children: team.roster
-                  .map(
-                    (p) => ListTile(
-                      title: Text(p.name),
-                      subtitle: Text('${p.sport} | ${p.position}'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => _openPlayerDetails(p),
-                    ),
-                  )
-                  .toList(),
-            ),
+        PodiumCard(
+          borderColor: PodiumColors.gold,
+          child: Column(
+            children: [
+              const TintedIcon(icon: Icons.emoji_events_outlined, size: 52),
+              const SizedBox(height: 12),
+              const Text('Draft complete', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Text(
+                'Your ${myTeam.isEmpty ? 0 : myTeam.first.roster.length}-player roster projects '
+                '${myTeam.isEmpty ? '0' : _teamPoints(myTeam.first).toStringAsFixed(0)} fantasy points.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, color: PodiumColors.muted),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  _stat('Picks', '${controller.currentPick}'),
+                  _stat('Teams', '${controller.teamCount}'),
+                  _stat('Format', controller.format == DraftFormat.snake ? 'Snake' : 'Linear'),
+                ],
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 16),
-        const Text(
-          'Draft History',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        ...controller.history.map(
-          (entry) => ListTile(dense: true, title: Text(entry)),
+        const SizedBox(height: 20),
+        for (final team in myTeam) ...[
+          const SectionHeader('Your team'),
+          const SizedBox(height: 8),
+          _teamCard(team, expanded: true),
+        ],
+        const SizedBox(height: 12),
+        const SectionHeader('CPU teams'),
+        const SizedBox(height: 8),
+        for (final team in others) _teamCard(team),
+        const SizedBox(height: 12),
+        const SectionHeader('Draft history'),
+        const SizedBox(height: 8),
+        PodiumCard(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            children: [
+              for (var i = 0; i < controller.history.length; i++)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 34,
+                        child: Text('${i + 1}', style: PodiumText.score(size: 18, color: PodiumColors.muted)),
+                      ),
+                      Expanded(
+                        child: Text(
+                          controller.history[i].replaceFirst(RegExp(r'^Round \d+: '), ''),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: controller.history[i].contains('My Team') ? FontWeight.w700 : FontWeight.w400,
+                            color: controller.history[i].contains('My Team') ? PodiumColors.gold : PodiumColors.chalk,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
         const SizedBox(height: 20),
-        ElevatedButton(
+        FilledButton.icon(
           onPressed: controller.reset,
-          child: const Text('Create New Mock Draft'),
+          icon: const Icon(Icons.replay_rounded),
+          label: const Text('New mock draft'),
         ),
       ],
+    );
+  }
+
+  Widget _teamCard(MockDraftTeam team, {bool expanded = false}) {
+    return PodiumCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: EdgeInsets.zero,
+      borderColor: team.isUser ? PodiumColors.gold : PodiumColors.line,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: expanded,
+          leading: InitialsAvatar(
+            name: team.name,
+            size: 36,
+            ring: team.isUser ? PodiumColors.gold : PodiumColors.line,
+          ),
+          title: Text(team.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text('${team.roster.length} players · ${_teamPoints(team).toStringAsFixed(0)} FPTS'),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+          children: [
+            for (final p in team.roster)
+              _PlayerRow(player: p, points: _points(p), onTap: () => _openPlayerDetails(p), compact: true),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Projected fantasy points used to rank players (NBA uses per-game points).
+double _points(DraftPlayer p) =>
+    (p.stats['Fantasy Points'] ?? p.stats['Fantasy Points Per Game'] ?? 0).toDouble();
+
+double _teamPoints(MockDraftTeam team) => team.roster.fold(0.0, (sum, p) => sum + _points(p));
+
+String _lastName(String name) => name.contains(' ') ? name.substring(name.lastIndexOf(' ') + 1) : name;
+
+/// Accent per sport so mixed-sport drafts are easy to scan.
+(Color, Color) _sportColors(String sport) => switch (sport) {
+      'NFL' => (PodiumColors.gold, PodiumColors.goldTint),
+      'NBA' => (PodiumColors.bronzeText, PodiumColors.bronzeTint),
+      'MLB' => (PodiumColors.silver, PodiumColors.silverTint),
+      _ => (PodiumColors.chalk, PodiumColors.raised),
+    };
+
+/// Square position badge, e.g. "QB" on a gold tint for NFL.
+class _PositionBadge extends StatelessWidget {
+  const _PositionBadge({required this.player, this.size = 42});
+
+  final DraftPlayer player;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final (color, tint) = _sportColors(player.sport);
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(size * 0.3)),
+      child: Text(
+        player.position,
+        style: PodiumText.score(size: size * 0.42, color: color),
+      ),
+    );
+  }
+}
+
+class _PlayerRow extends StatelessWidget {
+  const _PlayerRow({required this.player, required this.points, required this.onTap, this.compact = false});
+
+  final DraftPlayer player;
+  final double points;
+  final VoidCallback onTap;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return PodiumCard(
+      margin: EdgeInsets.only(bottom: compact ? 6 : 8),
+      padding: EdgeInsets.symmetric(horizontal: 12, vertical: compact ? 8 : 10),
+      radius: PodiumRadii.tile,
+      color: compact ? PodiumColors.navy : PodiumColors.field,
+      onTap: onTap,
+      child: Row(
+        children: [
+          _PositionBadge(player: player, size: compact ? 36 : 42),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  player.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${player.sport} · ${player.team}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: PodiumColors.muted),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(points.toStringAsFixed(0), style: PodiumText.score(size: 24)),
+          const SizedBox(width: 4),
+          const Icon(Icons.chevron_right, size: 20, color: PodiumColors.muted),
+        ],
+      ),
     );
   }
 }
@@ -721,9 +1088,9 @@ class MockDraftPlayerDetailsScreen extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Confirm Draft Pick'),
+        title: const Text('Confirm pick'),
         content: Text(
-          'Are you sure you want to draft ${player.name}? '
+          'Draft ${player.name} (${player.position})? '
           'This pick cannot be undone.',
         ),
         actions: [
@@ -733,7 +1100,7 @@ class MockDraftPlayerDetailsScreen extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Confirm Draft'),
+            child: const Text('Draft'),
           ),
         ],
       ),
@@ -760,61 +1127,112 @@ class MockDraftPlayerDetailsScreen extends StatelessWidget {
       animation: controller,
       builder: (context, _) {
         final canDraft = controller.validatePick(player) == null;
+        final stats = player.stats.entries.toList();
 
         return Scaffold(
-          appBar: AppBar(title: const Text('Player Details')),
+          appBar: AppBar(title: const Text('Player')),
           body: ListView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             children: [
-              Text(
-                player.name,
-                style: Theme.of(context).textTheme.headlineMedium
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${player.sport} | ${player.position}',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 4),
-              Text(player.team),
-              const SizedBox(height: 24),
-              Text(
-                'Season Statistics',
-                style: Theme.of(context).textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              const Text('Fictional player statistics'),
-              const Divider(),
-              ...player.stats.entries.map(
-                (stat) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(stat.key),
-                  trailing: Text(
-                    '${stat.value}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
+              PodiumCard(
+                child: Row(
+                  children: [
+                    _PositionBadge(player: player, size: 64),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            player.name,
+                            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.4),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${player.sport} · ${player.position} · ${player.team}',
+                            style: const TextStyle(fontSize: 13, color: PodiumColors.muted),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                    Column(
+                      children: [
+                        Text(_points(player).toStringAsFixed(0), style: PodiumText.score(size: 34, color: PodiumColors.gold)),
+                        const SizedBox(height: 2),
+                        Text('FPTS', style: PodiumText.overline.copyWith(fontSize: 10)),
+                      ],
+                    ),
+                  ],
                 ),
               ),
+              const SizedBox(height: 20),
+              const SectionHeader('Season stats'),
+              const SizedBox(height: 4),
+              Text('Fictional player statistics', style: PodiumText.caption.copyWith(fontSize: 13)),
+              const SizedBox(height: 12),
+              for (var i = 0; i < stats.length; i += 2)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    children: [
+                      Expanded(child: _StatTile(label: stats[i].key, value: '${stats[i].value}')),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: i + 1 < stats.length
+                            ? _StatTile(label: stats[i + 1].key, value: '${stats[i + 1].value}')
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
-          bottomNavigationBar: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: ElevatedButton(
-                onPressed: canDraft ? () => _confirmDraft(context) : null,
-                child: Text(
-                  canDraft ? 'Draft ${player.name}' : 'Draft Unavailable',
+          bottomNavigationBar: Container(
+            decoration: const BoxDecoration(
+              color: PodiumColors.deep,
+              border: Border(top: BorderSide(color: PodiumColors.line)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                child: FilledButton(
+                  onPressed: canDraft ? () => _confirmDraft(context) : null,
+                  child: Text(canDraft ? 'Draft ${player.name}' : 'Not your pick'),
                 ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  const _StatTile({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return PodiumCard(
+      radius: PodiumRadii.tile,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: PodiumText.overline.copyWith(fontSize: 10.5),
+          ),
+          const SizedBox(height: 6),
+          Text(value, style: PodiumText.score(size: 28)),
+        ],
+      ),
     );
   }
 }
